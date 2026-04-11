@@ -19,6 +19,7 @@ import networkx as nx
 from .logger_factory import LoggerFactory
 from .caret2networkx import caret2networkx
 from .caret_extend_callback_group import extend_callback_group
+from .caret_extend_agnocast import extend_agnocast
 from .caret_extend_path import get_path_dict
 from .dot2networkx import dot2networkx
 from .ros2networkx import Ros2Networkx
@@ -37,11 +38,13 @@ class GraphManager:
     self.graph: nx.DiGraph = nx.MultiDiGraph()
     self.caret_path_dict: dict = {}
 
-  def load_graph_from_caret(self, filename: str, target_path: str = 'all_graph'):
+  def load_graph_from_caret(self, filename: str, target_path: str = 'all_graph',
+               agnocast_file: str | None = None):
     """ load_graph_from_caret """
     self.graph = caret2networkx(filename, target_path,
                   self.app_setting['display_unconnected_nodes'])
     self.graph = extend_callback_group(filename, self.graph)
+    self.graph = extend_agnocast(filename, self.graph, agnocast_file)
     self.load_graph_postprocess(filename)
     self.caret_path_dict.update(get_path_dict(filename))
 

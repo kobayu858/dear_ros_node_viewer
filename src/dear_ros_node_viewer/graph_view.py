@@ -38,6 +38,11 @@ class GraphView:
     self.dpg_id_caret_path: int = -1
     self.dpg_id_mermaid_export_dialog: int = -1
 
+    # Agnocast menu item IDs
+    self.dpg_id_agnocast_show: int = -1
+    self.dpg_id_node_diff: int = -1
+    self.dpg_id_bridge: int = -1
+
     self.color_node_selected = [0, 0, 64]
     self.color_node_bar = [32, 32, 32]
     self.color_node_back = [64, 64, 64]
@@ -145,6 +150,17 @@ class GraphView:
         dpg.add_menu_item(label="Load Current Gaph",
                   callback=self._cb_menu_graph_current)
 
+      with dpg.menu(label="Agnocast"):
+        self.dpg_id_agnocast_show = dpg.add_menu_item(
+          label="Show Agnocast",
+          callback=self._cb_menu_agnocast_toggle)
+        self.dpg_id_node_diff = dpg.add_menu_item(
+          label="Show Node Diff",
+          callback=self._cb_menu_node_diff_toggle)
+        self.dpg_id_bridge = dpg.add_menu_item(
+          label="Show Bridge",
+          callback=self._cb_menu_bridge_toggle)
+
   def add_node_in_dpg(self, display_cb_detail: bool):
     """ Add nodes and attributes """
     graph = self.graph_viewmodel.get_graph()
@@ -189,6 +205,11 @@ class GraphView:
         # Add text for node I/O(topics)
         self.add_node_attr_in_dpg(node_name, display_cb_detail)
 
+        # Register and hide bridge nodes by default
+        if graph.nodes[node_name].get('is_bridge_node', False):
+          self.graph_viewmodel.add_dpg_bridge_node_id(node_name, node_id)
+          dpg.hide_item(node_id)
+
     self.graph_viewmodel.update_nodename(GraphViewModel.OmitType.LAST)
     self.graph_viewmodel.update_edgename(GraphViewModel.OmitType.LAST)
 
@@ -199,12 +220,14 @@ class GraphView:
     edge_list_sub = []
     for edge in graph.edges:
       if edge[0] == node_name:
-        label = graph.edges[edge]['label'] if 'label' in graph.edges[edge] else 'out'
+        edge_data = graph.edges[edge]
+        label = edge_data.get('label_src', edge_data.get('label', 'out'))
         if label in edge_list_pub:
           continue
         edge_list_pub.append(label)
       if edge[1] == node_name:
-        label = graph.edges[edge]['label'] if 'label' in graph.edges[edge] else 'in'
+        edge_data = graph.edges[edge]
+        label = edge_data.get('label_dst', edge_data.get('label', 'in'))
         if label in edge_list_sub:
           continue
         edge_list_sub.append(label)
@@ -263,9 +286,13 @@ class GraphView:
     for edge in graph.edges:
       if 'label' in graph.edges[edge]:
         label = graph.edges[edge]['label']
+        # Bridged (synthesized) edges may have different topic names on
+        # publisher vs subscriber side (e.g. /topic_agnocast -> /topic).
+        label_src = graph.edges[edge].get('label_src', label)
+        label_dst = graph.edges[edge].get('label_dst', label)
         edge_id = dpg.add_node_link(
-          self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], label),
-          self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], label))
+          self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], label_src),
+          self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], label_dst))
         self.graph_viewmodel.add_dpg_id_edge(label, edge_id)
       else:
         edge_id = dpg.add_node_link(
@@ -281,6 +308,17 @@ class GraphView:
             category=dpg.mvThemeCat_Nodes)
           self.graph_viewmodel.add_dpg_edge_color(edge, theme_color)
           dpg.bind_item_theme(edge_id, theme_id)
+
+      # Register bridge edges and synthesized direct edges for visibility control
+      is_bridge_edge = graph.edges[edge].get('is_bridge_edge', False)
+      is_bridged = graph.edges[edge].get('is_bridged', False)
+
+      if is_bridge_edge:
+        self.graph_viewmodel.add_dpg_bridge_edge_id(edge, edge_id)
+        dpg.hide_item(edge_id)  # hidden by default (Show Bridge OFF)
+      elif is_bridged:
+        self.graph_viewmodel.add_dpg_bridged_direct_edge_id(edge, edge_id)
+        # shown by default (Show Bridge OFF = direct edges visible)
 
   def _cb_resize(self, sender, app_data):
     """
@@ -381,6 +419,33 @@ class GraphView:
     """ High light selected CARET path """
     path_name = dpg.get_item_label(sender)
     self.graph_viewmodel.high_light_caret_path(path_name)
+
+  def _cb_menu_agnocast_toggle(self, sender, app_data, user_data):
+    """Toggle Agnocast edge/node coloring"""
+    current = self.graph_viewmodel.agnocast_display['show_agnocast']
+    self.graph_viewmodel.toggle_agnocast_display(not current)
+    label = 'Hide Agnocast' if not current else 'Show Agnocast'
+    dpg.set_item_label(sender, label)
+
+  def _cb_menu_node_diff_toggle(self, sender, app_data, user_data):
+    """Toggle Node Diff coloring"""
+    if not self.graph_viewmodel.has_node_type_info():
+      logger.info('Node type info not available (no agnocast_info.json)')
+      return
+    current = self.graph_viewmodel.agnocast_display['show_node_diff']
+    self.graph_viewmodel.toggle_node_diff_display(not current)
+    label = 'Hide Node Diff' if not current else 'Show Node Diff'
+    dpg.set_item_label(sender, label)
+
+  def _cb_menu_bridge_toggle(self, sender, app_data, user_data):
+    """Toggle bridge node/edge visibility"""
+    if not self.graph_viewmodel.has_bridge_nodes():
+      logger.info('No bridge nodes in current graph')
+      return
+    current = self.graph_viewmodel.agnocast_display['show_bridge']
+    self.graph_viewmodel.toggle_bridge_display(not current)
+    label = 'Hide Bridge' if not current else 'Show Bridge'
+    dpg.set_item_label(sender, label)
 
   def _setup_mermaid_export_dialog(self):
     """ Setup folder selection dialog for Mermaid export """

@@ -62,7 +62,30 @@ class GraphViewModel:
       'id_edge': {},           # {id: "edge_name"}
       'edge_color': {},        # {edge_obj: color_id}
       'callbackgroup_id': {},  # {"callback_group_name": attr_id}
+      'bridge_node_ids': {},        # {"node_name": dpg_id}
+      'bridge_edge_ids': {},        # {edge_obj: dpg_id}
+      'bridged_direct_edge_ids': {},  # {edge_obj: dpg_id}
     }
+
+    # Agnocast display state
+    self.agnocast_display = {
+      'show_agnocast': False,
+      'show_node_diff': False,
+      'show_bridge': False,
+    }
+
+    # Agnocast colors
+    self.color_agnocast_edge = [0, 200, 200]       # cyan for agnocast edges
+    self.color_agnocast_node = [0, 180, 180]        # cyan border for agnocast nodes
+    self.color_agnocast_node_bg = [0, 100, 100]     # teal background for ③ agnocast::Node
+    self.color_bridge_node = [200, 120, 0]          # orange for bridge nodes
+    self.color_bridge_edge = [200, 120, 0]          # orange for bridge edges
+    if app_setting['bg_white']:
+      self.color_agnocast_edge = [0, 150, 150]
+      self.color_agnocast_node = [0, 140, 140]
+      self.color_agnocast_node_bg = [180, 230, 230]
+      self.color_bridge_node = [220, 150, 50]
+      self.color_bridge_edge = [220, 150, 50]
 
   def get_graph(self) -> nx.DiGraph:
     """Graph getter"""
@@ -355,3 +378,122 @@ class GraphViewModel:
         str: Path to saved HTML file
     """
     return self.graph_manager.export_to_mermaid(output_dir)
+
+  # --- Agnocast display control ---
+
+  def has_agnocast_edges(self) -> bool:
+    """Check if the graph has any Agnocast edges"""
+    graph = self.get_graph()
+    for edge in graph.edges:
+      if graph.edges[edge].get('is_agnocast', False):
+        return True
+    return False
+
+  def has_node_type_info(self) -> bool:
+    """Check if any node has agnocast_node_type attribute"""
+    graph = self.get_graph()
+    for node_name in graph.nodes:
+      if 'agnocast_node_type' in graph.nodes[node_name]:
+        return True
+    return False
+
+  def has_bridge_nodes(self) -> bool:
+    """Check if the graph has any bridge nodes"""
+    graph = self.get_graph()
+    for node_name in graph.nodes:
+      if graph.nodes[node_name].get('is_bridge_node', False):
+        return True
+    return False
+
+  def toggle_agnocast_display(self, onoff: bool):
+    """Toggle Agnocast edge/node coloring"""
+    self.agnocast_display['show_agnocast'] = onoff
+    graph = self.get_graph()
+
+    # Color agnocast edges
+    for edge in graph.edges:
+      if graph.edges[edge].get('is_agnocast', False):
+        if edge in self.dpg_bind['edge_color']:
+          if onoff:
+            dpg.set_value(self.dpg_bind['edge_color'][edge],
+                    self.color_agnocast_edge)
+          else:
+            dpg.set_value(self.dpg_bind['edge_color'][edge],
+                    graph.nodes[edge[0]].get('color', self.color_highlight_def))
+
+    # Color agnocast nodes
+    for node_name in graph.nodes:
+      if graph.nodes[node_name].get('has_agnocast', False):
+        if node_name in self.dpg_bind['node_color']:
+          if onoff:
+            dpg.set_value(self.dpg_bind['node_color'][node_name],
+                    self.color_agnocast_node)
+          else:
+            dpg.set_value(self.dpg_bind['node_color'][node_name],
+                    self.color_highlight_def)
+
+  def toggle_node_diff_display(self, onoff: bool):
+    """Toggle Node Diff coloring (② vs ③ distinction)"""
+    self.agnocast_display['show_node_diff'] = onoff
+    graph = self.get_graph()
+
+    for node_name in graph.nodes:
+      node_type = graph.nodes[node_name].get('agnocast_node_type', '')
+      if node_name not in self.dpg_bind['node_color']:
+        continue
+
+      if onoff:
+        if node_type == 'agnocast_node':
+          # ③ agnocast::Node — distinct background
+          dpg.set_value(self.dpg_bind['node_color'][node_name],
+                  self.color_agnocast_node_bg)
+        elif node_type == 'rclcpp_with_agnocast':
+          # ② rclcpp + Agnocast — cyan border (same as Show Agnocast)
+          dpg.set_value(self.dpg_bind['node_color'][node_name],
+                  self.color_agnocast_node)
+      else:
+        # Restore: if Show Agnocast is still on, use agnocast color
+        if self.agnocast_display['show_agnocast'] and \
+            graph.nodes[node_name].get('has_agnocast', False):
+          dpg.set_value(self.dpg_bind['node_color'][node_name],
+                  self.color_agnocast_node)
+        else:
+          dpg.set_value(self.dpg_bind['node_color'][node_name],
+                  self.color_highlight_def)
+
+  def toggle_bridge_display(self, onoff: bool):
+    """Toggle bridge node/edge visibility"""
+    self.agnocast_display['show_bridge'] = onoff
+
+    # Show/hide bridge nodes
+    for _, node_id in self.dpg_bind['bridge_node_ids'].items():
+      if onoff:
+        dpg.show_item(node_id)
+      else:
+        dpg.hide_item(node_id)
+
+    # Show/hide bridge edges
+    for _, edge_id in self.dpg_bind['bridge_edge_ids'].items():
+      if onoff:
+        dpg.show_item(edge_id)
+      else:
+        dpg.hide_item(edge_id)
+
+    # Inverse: show/hide synthesized direct edges
+    for _, edge_id in self.dpg_bind['bridged_direct_edge_ids'].items():
+      if onoff:
+        dpg.hide_item(edge_id)
+      else:
+        dpg.show_item(edge_id)
+
+  def add_dpg_bridge_node_id(self, node_name, dpg_id):
+    """Register bridge node dpg_id"""
+    self.dpg_bind['bridge_node_ids'][node_name] = dpg_id
+
+  def add_dpg_bridge_edge_id(self, edge, dpg_id):
+    """Register bridge edge dpg_id"""
+    self.dpg_bind['bridge_edge_ids'][edge] = dpg_id
+
+  def add_dpg_bridged_direct_edge_id(self, edge, dpg_id):
+    """Register synthesized direct edge dpg_id"""
+    self.dpg_bind['bridged_direct_edge_ids'][edge] = dpg_id
