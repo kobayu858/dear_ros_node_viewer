@@ -128,8 +128,8 @@ def _parse_node_info_agnocast(output: str) -> tuple[set[str], set[str]]:
       current_section = None
       continue
 
-    # Collect topic names (lines starting with '/')
-    if current_section and stripped.startswith('/'):
+    # Collect Agnocast topic names (lines starting with '/' and tagged)
+    if current_section and stripped.startswith('/') and '(Agnocast' in stripped:
       topic = stripped.split(':')[0].strip()
       if current_section == 'pub':
         pub_topics.add(topic)
@@ -249,20 +249,11 @@ def _fetch_node_info(node_name: str) -> tuple[set[str], set[str]] | None:
 
 
 def _fetch_all_topic_info() -> dict[str, TopicEndpoints] | None:
-  """Execute ``ros2 topic info_agnocast --all -v`` and return parsed result.
+  """Execute ``ros2 topic info_agnocast -v`` per topic and return parsed result.
 
-  Falls back to per-topic queries if ``--all`` is not available.
+  Queries each Agnocast topic individually with ``-v`` to obtain
+  per-node endpoint information.
   """
-  # Try --all first (requires agnocast-side implementation)
-  output = _run_agnocast_command(
-    ['ros2', 'topic', 'info_agnocast', '--all', '-v'],
-    timeout=30
-  )
-  if output is not None:
-    return _parse_all_topic_info_agnocast(output)
-
-  # Fallback: per-topic queries (slower, but works without --all)
-  logger.info('--all flag not available, falling back to per-topic queries')
   topic_list_output = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
   if topic_list_output is None:
     return None

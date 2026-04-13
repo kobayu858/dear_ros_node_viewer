@@ -106,11 +106,11 @@ class TestParseNodeInfoAgnocast(unittest.TestCase):
 
   def test_basic_pub_sub(self):
     output = (
-      "Agnocast Publishers:\n"
-      "  /points: sensor_msgs/msg/PointCloud2\n"
-      "  /image: sensor_msgs/msg/Image\n"
-      "Agnocast Subscribers:\n"
-      "  /control_cmd: autoware_msgs/msg/ControlCommand\n"
+      "  Publishers:\n"
+      "    /points: sensor_msgs/msg/PointCloud2 (Agnocast enabled)\n"
+      "    /image: sensor_msgs/msg/Image (Agnocast enabled)\n"
+      "  Subscribers:\n"
+      "    /control_cmd: autoware_msgs/msg/ControlCommand (Agnocast enabled)\n"
     )
     pubs, subs = runtime._parse_node_info_agnocast(output)
     self.assertEqual(pubs, {'/points', '/image'})
@@ -118,21 +118,24 @@ class TestParseNodeInfoAgnocast(unittest.TestCase):
 
   def test_empty_sections(self):
     output = (
-      "Agnocast Publishers:\n"
-      "Agnocast Subscribers:\n"
+      "  Publishers:\n"
+      "  Subscribers:\n"
     )
     pubs, subs = runtime._parse_node_info_agnocast(output)
     self.assertEqual(pubs, set())
     self.assertEqual(subs, set())
 
-  def test_mixed_sections_skips_services(self):
+  def test_mixed_sections_filters_non_agnocast(self):
+    """ROS 2 topics (no Agnocast suffix) are filtered out, Agnocast topics are kept."""
     output = (
-      "Publishers:\n"
-      "  /topic_a: msg/TypeA\n"
-      "Subscribers:\n"
-      "  /topic_b: msg/TypeB\n"
-      "Service Servers:\n"
-      "  /srv_a: srv/TypeA\n"
+      "  Publishers:\n"
+      "    /topic_a: msg/TypeA (Agnocast enabled)\n"
+      "    /ros2_only: msg/TypeR\n"
+      "  Subscribers:\n"
+      "    /topic_b: msg/TypeB (Agnocast enabled, bridged)\n"
+      "    /ros2_sub: msg/TypeS\n"
+      "  Service Servers:\n"
+      "    /srv_a: srv/TypeA\n"
     )
     pubs, subs = runtime._parse_node_info_agnocast(output)
     self.assertEqual(pubs, {'/topic_a'})
@@ -549,13 +552,16 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       "/detector (Agnocast enabled)\n"
     )
     node_info_output = (
-      "Agnocast Publishers:\n"
-      "  /topic_y: msg/Type\n"
-      "Agnocast Subscribers:\n"
-      "  /topic_x: msg/Type\n"
+      "  Publishers:\n"
+      "    /topic_y: msg/Type (Agnocast enabled)\n"
+      "  Subscribers:\n"
+      "    /topic_x: msg/Type (Agnocast enabled)\n"
     )
-    topic_info_output = (
-      "--- /topic_x ---\n"
+    topic_list_output = (
+      "/topic_x (Agnocast enabled)\n"
+      "/topic_y (Agnocast enabled)\n"
+    )
+    topic_info_topic_x = (
       "Type: msg/Type\n"
       "\n"
       "ROS 2 Publisher count: 0\n"
@@ -573,8 +579,8 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       "Node namespace: /\n"
       "Topic type: msg/Type\n"
       "Endpoint type: SUBSCRIPTION (Agnocast enabled)\n"
-      "\n"
-      "--- /topic_y ---\n"
+    )
+    topic_info_topic_y = (
       "Type: msg/Type\n"
       "\n"
       "ROS 2 Publisher count: 0\n"
@@ -582,12 +588,33 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       "ROS 2 Subscription count: 0\n"
       "Agnocast Subscription count: 0\n"
     )
-    with patch.object(runtime.subprocess, 'run',
-              side_effect=self._mock_run({
-                'node list_agnocast': node_list_output,
-                'node info_agnocast': node_info_output,
-                'topic info_agnocast --all': topic_info_output,
-              })):
+
+    def side_effect(cmd, **kwargs):
+      cmd_str = ' '.join(cmd)
+      result = MagicMock()
+      result.stderr = ''
+      if 'node list_agnocast' in cmd_str:
+        result.returncode = 0
+        result.stdout = node_list_output
+      elif 'node info_agnocast' in cmd_str:
+        result.returncode = 0
+        result.stdout = node_info_output
+      elif 'topic list_agnocast' in cmd_str:
+        result.returncode = 0
+        result.stdout = topic_list_output
+      elif 'topic info_agnocast' in cmd_str and '/topic_x' in cmd_str:
+        result.returncode = 0
+        result.stdout = topic_info_topic_x
+      elif 'topic info_agnocast' in cmd_str and '/topic_y' in cmd_str:
+        result.returncode = 0
+        result.stdout = topic_info_topic_y
+      else:
+        result.returncode = 1
+        result.stdout = ''
+        result.stderr = 'not found'
+      return result
+
+    with patch.object(runtime.subprocess, 'run', side_effect=side_effect):
       g = _make_simple_graph()
       g = runtime.extend_agnocast_runtime(g)
 
@@ -630,7 +657,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       if 'node info_agnocast' in cmd_str:
         if 'detector_a' in cmd_str:
           result.returncode = 0
-          result.stdout = "Agnocast Publishers:\n  /topic_x: msg/T\nAgnocast Subscribers:\n"
+          result.stdout = "  Publishers:\n    /topic_x: msg/T (Agnocast enabled)\n  Subscribers:\n"
           return result
         else:
           # detector_b fails
@@ -638,12 +665,8 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
           result.stdout = ''
           result.stderr = 'timeout'
           return result
-      if 'topic info_agnocast --all' in cmd_str:
-        result.returncode = 1  # Also fails
-        result.stdout = ''
-        return result
       if 'topic list_agnocast' in cmd_str:
-        result.returncode = 1  # Fallback also fails
+        result.returncode = 1  # topic list fails
         result.stdout = ''
         return result
       result.returncode = 1
@@ -666,12 +689,12 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       "/agnocast_bridge_node_999 (Agnocast enabled)\n"
       "/planning/planner\n"
     )
-    # --all returns empty (simpler test)
-    topic_info_output = ""
+    # topic list returns empty (simpler test)
+    topic_list_output = ""
     with patch.object(runtime.subprocess, 'run',
               side_effect=self._mock_run({
                 'node list_agnocast': node_list_output,
-                'topic info_agnocast --all': topic_info_output,
+                'topic list_agnocast': topic_list_output,
               })):
       g = nx.MultiDiGraph()
       g.add_node('"/sensing/lidar"')
