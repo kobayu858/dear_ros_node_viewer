@@ -573,15 +573,35 @@ def _process_bridge_nodes(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
         })
 
   for e in edges_to_add:
-    graph.add_edge(
-      e['src'], e['dst'],
-      label=e['label_dst'],
-      label_src=e['label_src'],
-      label_dst=e['label_dst'],
-      is_agnocast=True,
-      is_bridged=True,
-      is_bridge_edge=False,
-    )
+    # Check if an edge with the same src/dst/topic already exists (from Step 4)
+    existing_key = None
+    label_dst = e['label_dst'].strip('"')
+    if graph.has_edge(e['src'], e['dst']):
+      for key in graph[e['src']][e['dst']]:
+        edge_label = graph[e['src']][e['dst']][key].get('label', '').strip('"')
+        if edge_label == label_dst:
+          existing_key = key
+          break
+
+    if existing_key is not None:
+      # Upgrade existing edge to synthesized bridge edge
+      graph.edges[e['src'], e['dst'], existing_key].update({
+        'label_src': e['label_src'],
+        'label_dst': e['label_dst'],
+        'is_agnocast': True,
+        'is_bridged': True,
+        'is_bridge_edge': False,
+      })
+    else:
+      graph.add_edge(
+        e['src'], e['dst'],
+        label=e['label_dst'],
+        label_src=e['label_src'],
+        label_dst=e['label_dst'],
+        is_agnocast=True,
+        is_bridged=True,
+        is_bridge_edge=False,
+      )
 
   # Default for edges not yet marked
   for edge in graph.edges:
