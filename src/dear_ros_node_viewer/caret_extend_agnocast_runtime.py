@@ -262,7 +262,7 @@ def _fetch_all_topic_info() -> dict[str, TopicEndpoints] | None:
   all_info: dict[str, TopicEndpoints] = {}
   for topic in agnocast_topics:
     output = _run_agnocast_command(
-      ['ros2', 'topic', 'info_agnocast', '-v', topic]
+      ['ros2', 'topic', 'info_agnocast', '-v', '-d', topic]
     )
     if output is not None:
       all_info[topic] = _parse_single_topic_info(output)
@@ -370,17 +370,18 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
   # Build maps from existing edges (dot2networkx graph)
   topic_to_publishers, topic_to_subscribers = _build_topic_node_maps(graph)
 
-  # Register ② nodes' Agnocast endpoints (not in .dot but known from CLI)
+  # Register Agnocast endpoints from CLI (not in .dot)
+  # Includes ② nodes' Agnocast pub/sub AND bridge nodes' endpoints.
+  # Bridge nodes must be in the maps so ③→bridge edges are created,
+  # which _process_bridge_nodes needs to find upstream/downstream.
   if topic_endpoints is not None:
     for topic, endpoints in topic_endpoints.items():
       for ep in endpoints.agnocast_pubs:
-        if not ep.is_bridge:
-          quoted = _quote_name(ep.node_name)
-          topic_to_publishers.setdefault(topic, set()).add(quoted)
+        quoted = _quote_name(ep.node_name)
+        topic_to_publishers.setdefault(topic, set()).add(quoted)
       for ep in endpoints.agnocast_subs:
-        if not ep.is_bridge:
-          quoted = _quote_name(ep.node_name)
-          topic_to_subscribers.setdefault(topic, set()).add(quoted)
+        quoted = _quote_name(ep.node_name)
+        topic_to_subscribers.setdefault(topic, set()).add(quoted)
 
   # Phase 1: Add all ③ nodes and register their topics into the maps
   nodes_to_connect: list[tuple[str, set[str], set[str]]] = []
