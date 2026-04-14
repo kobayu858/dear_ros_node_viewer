@@ -100,7 +100,7 @@ class GraphViewModel:
     """Load Graph from file"""
     if '.yaml' in graph_filename:
       try:
-        self.graph_manager.load_graph_from_caret(graph_filename, agnocast_file)
+        self.graph_manager.load_graph_from_caret(graph_filename, agnocast_file=agnocast_file)
       except FileNotFoundError as err:
         logger.error(err)
     elif '.dot' in graph_filename:
