@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "source": "manual_test",
+  "agnocast_nodes": [
+    "/perception/detector"
+  ]
+}
