@@ -96,11 +96,11 @@ class GraphViewModel:
     self.graph_manager.load_graph_from_running_ros()
     self._reset_internl_status()
 
-  def load_graph(self, graph_filename: str):
+  def load_graph(self, graph_filename: str, agnocast_file: str | None = None):
     """Load Graph from file"""
     if '.yaml' in graph_filename:
       try:
-        self.graph_manager.load_graph_from_caret(graph_filename)
+        self.graph_manager.load_graph_from_caret(graph_filename, agnocast_file)
       except FileNotFoundError as err:
         logger.error(err)
     elif '.dot' in graph_filename:

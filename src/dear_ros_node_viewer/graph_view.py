@@ -51,7 +51,7 @@ class GraphView:
       self.color_node_bar = [val + 180 for val in self.color_node_bar]
       self.color_node_back = [val + 180 for val in self.color_node_back]
 
-  def start(self, graph_filename: str, display_cb_detail: bool, window_width: int = 1920, window_height: int = 1080):
+  def start(self, graph_filename: str, display_cb_detail: bool, window_width: int = 1920, window_height: int = 1080, agnocast_file: str | None = None):
     """ Start Dear PyGui context """
     dpg.create_context()
     dpg.create_viewport(
@@ -72,7 +72,7 @@ class GraphView:
       self.add_menu_in_dpg()
 
     self._setup_mermaid_export_dialog()
-    self.graph_viewmodel.load_graph(graph_filename)
+    self.graph_viewmodel.load_graph(graph_filename, agnocast_file=agnocast_file)
     self.update_node_editor(self.app_setting['bg_white'], display_cb_detail)
 
     # Update node position and font according to the default graph size and font size

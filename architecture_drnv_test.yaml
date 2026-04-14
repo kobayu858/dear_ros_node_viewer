@@ -1,0 +1,289 @@
+named_paths: []
+executors:
+- executor_type: single_threaded_executor
+  executor_name: executor_00
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_02
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_05
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_08
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_10
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_12
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_14
+  callback_group_names: []
+- executor_type: agnocast_single_threaded_executor
+  executor_name: executor_15
+  callback_group_names:
+  - /agnocast_bridge_node_75132/callback_group_0
+- executor_type: single_threaded_executor
+  executor_name: executor_18
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_20
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_22
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_24
+  callback_group_names: []
+- executor_type: single_threaded_executor
+  executor_name: executor_28
+  callback_group_names: []
+- executor_type: agnocast_single_threaded_executor
+  executor_name: executor_30
+  callback_group_names:
+  - /fusion_node/callback_group_0
+- executor_type: single_threaded_executor
+  executor_name: executor_31
+  callback_group_names:
+  - /sensor_driver/callback_group_0
+- executor_type: agnocast_only_single_threaded_executor
+  executor_name: executor_32
+  callback_group_names:
+  - /detector/callback_group_0
+- executor_type: agnocast_only_single_threaded_executor
+  executor_name: executor_33
+  callback_group_names:
+  - /planner/callback_group_0
+- executor_type: single_threaded_executor
+  executor_name: executor_34
+  callback_group_names:
+  - /controller/callback_group_0
+nodes:
+- node_name: /agnocast_bridge_node_75132
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /agnocast_bridge_node_75132/callback_group_0
+    callback_names:
+    - /agnocast_bridge_node_75132/callback_0
+  callbacks:
+  - callback_name: /agnocast_bridge_node_75132/callback_0
+    callback_type: subscription_callback
+    topic_name: /plan_agnocast
+    symbol: agnocast::AgnocastToRosBridge<std_msgs::msg::Float64MultiArray_<std::allocator<void>
+      > >::AgnocastToRosBridge(std::shared_ptr<rclcpp::Node> const&, std::__cxx11::basic_string<char,
+      std::char_traits<char>, std::allocator<char> > const&, rclcpp::QoS const&)::{lambda(agnocast::ipc_shared_ptr<std_msgs::msg::Float64MultiArray_<std::allocator<void>
+      > >)#1}
+  publishes:
+  - topic_name: /plan
+    callback_names:
+    - /agnocast_bridge_node_75132/callback_0
+  subscribes:
+  - topic_name: /plan_agnocast
+    callback_name: /agnocast_bridge_node_75132/callback_0
+  message_contexts:
+  - context_type: callback_chain
+    subscription_topic_name: /plan_agnocast
+    publisher_topic_name: /plan
+    callbacks:
+    - /agnocast_bridge_node_75132/callback_0
+- node_name: /agnocast_bridge_node_75139
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75159
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75203
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75212
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75252
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75277
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75305
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75329
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75333
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75349
+  callback_groups: []
+- node_name: /agnocast_bridge_node_75385
+  callback_groups: []
+- node_name: /agnocast_cie_thread_configurator/client_node_75132
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75139
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75159
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75203
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75212
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75252
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75277
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75305
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75329
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75333
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75349
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /agnocast_cie_thread_configurator/client_node_75385
+  callback_groups: []
+  publishes:
+  - topic_name: /agnocast_cie_thread_configurator/callback_group_info
+    callback_names:
+    - UNDEFINED
+- node_name: /controller
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /controller/callback_group_0
+    callback_names:
+    - /controller/callback_0
+  callbacks:
+  - callback_name: /controller/callback_0
+    callback_type: subscription_callback
+    topic_name: /plan
+    symbol: std::_Bind<void (Controller::*(Controller*, std::_Placeholder<1>))(std::shared_ptr<std_msgs::msg::Float64MultiArray_<std::allocator<void>
+      > >)>
+  subscribes:
+  - topic_name: /plan
+    callback_name: /controller/callback_0
+- node_name: /detector
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /detector/callback_group_0
+    callback_names:
+    - /detector/callback_0
+  callbacks:
+  - callback_name: /detector/callback_0
+    callback_type: subscription_callback
+    topic_name: /fused_data_agnocast
+    symbol: std::_Bind<void (Detector::*(Detector*, std::_Placeholder<1>))(agnocast::ipc_shared_ptr<std_msgs::msg::Float64MultiArray_<std::allocator<void>
+      > > const&)>
+  publishes:
+  - topic_name: /detection_agnocast
+    callback_names:
+    - /detector/callback_0
+  subscribes:
+  - topic_name: /fused_data_agnocast
+    callback_name: /detector/callback_0
+  message_contexts:
+  - context_type: callback_chain
+    subscription_topic_name: /fused_data_agnocast
+    publisher_topic_name: /detection_agnocast
+    callbacks:
+    - /detector/callback_0
+- node_name: /fusion_node
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /fusion_node/callback_group_0
+    callback_names:
+    - /fusion_node/callback_0
+  callbacks:
+  - callback_name: /fusion_node/callback_0
+    callback_type: subscription_callback
+    topic_name: /sensor_data
+    symbol: std::_Bind<void (FusionNode::*(FusionNode*, std::_Placeholder<1>))(std::shared_ptr<std_msgs::msg::Float64MultiArray_<std::allocator<void>
+      > >)>
+  publishes:
+  - topic_name: /fused_data_agnocast
+    callback_names:
+    - /fusion_node/callback_0
+  subscribes:
+  - topic_name: /sensor_data
+    callback_name: /fusion_node/callback_0
+  message_contexts:
+  - context_type: callback_chain
+    subscription_topic_name: /sensor_data
+    publisher_topic_name: /fused_data_agnocast
+    callbacks:
+    - /fusion_node/callback_0
+- node_name: /planner
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /planner/callback_group_0
+    callback_names:
+    - /planner/callback_0
+  callbacks:
+  - callback_name: /planner/callback_0
+    callback_type: subscription_callback
+    topic_name: /detection_agnocast
+    symbol: std::_Bind<void (Planner::*(Planner*, std::_Placeholder<1>))(agnocast::ipc_shared_ptr<std_msgs::msg::Float64MultiArray_<std::allocator<void>
+      > > const&)>
+  publishes:
+  - topic_name: /plan_agnocast
+    callback_names:
+    - /planner/callback_0
+  subscribes:
+  - topic_name: /detection_agnocast
+    callback_name: /planner/callback_0
+  message_contexts:
+  - context_type: callback_chain
+    subscription_topic_name: /detection_agnocast
+    publisher_topic_name: /plan_agnocast
+    callbacks:
+    - /planner/callback_0
+- node_name: /sensor_driver
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /sensor_driver/callback_group_0
+    callback_names:
+    - /sensor_driver/callback_0
+  callbacks:
+  - callback_name: /sensor_driver/callback_0
+    callback_type: timer_callback
+    period_ns: 100000000
+    symbol: std::_Bind<void (SensorDriver::*(SensorDriver*))()>
+  publishes:
+  - topic_name: /sensor_data
+    callback_names:
+    - /sensor_driver/callback_0
