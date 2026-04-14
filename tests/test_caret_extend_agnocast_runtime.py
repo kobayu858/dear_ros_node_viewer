@@ -27,42 +27,10 @@ from unittest.mock import patch, MagicMock
 
 import networkx as nx
 
-# Allow importing the module without the full package structure.
-# We need to intercept the relative import (.logger_factory) by
-# pre-populating sys.modules with a stub package.
-sys.path.insert(0, os.path.dirname(__file__))
+# Add src to path so we can import the package normally
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# Create a stub package so that relative imports resolve
-_pkg_name = 'dear_ros_node_viewer'
-if _pkg_name not in sys.modules:
-  import types
-  _pkg = types.ModuleType(_pkg_name)
-  _pkg.__path__ = [os.path.dirname(__file__)]
-  _pkg.__package__ = _pkg_name
-  sys.modules[_pkg_name] = _pkg
-
-# Stub the logger_factory sub-module
-logger_mock = MagicMock()
-logger_factory_module = MagicMock()
-logger_factory_module.LoggerFactory.create.return_value = logger_mock
-sys.modules[f'{_pkg_name}.logger_factory'] = logger_factory_module
-
-# Stub caret2networkx (for quote_name, if ever needed)
-caret2networkx_module = MagicMock()
-caret2networkx_module.quote_name = lambda name: '"' + name + '"'
-sys.modules[f'{_pkg_name}.caret2networkx'] = caret2networkx_module
-
-# Now import the module under test as a sub-module of the stub package
-import importlib.util
-_spec = importlib.util.spec_from_file_location(
-  f'{_pkg_name}.caret_extend_agnocast_runtime',
-  os.path.join(os.path.dirname(__file__), 'caret_extend_agnocast_runtime.py'),
-  submodule_search_locations=[]
-)
-runtime = importlib.util.module_from_spec(_spec)
-runtime.__package__ = _pkg_name
-sys.modules[_spec.name] = runtime
-_spec.loader.exec_module(runtime)
+from dear_ros_node_viewer import caret_extend_agnocast_runtime as runtime
 
 
 # ===========================================================================
@@ -319,6 +287,7 @@ class TestAddAgnocastNodes(unittest.TestCase):
     agnocast_only = {'/detector'}
     node_topics = {'/detector': ({'/topic_y'}, {'/topic_x'})}
 
+    # topic_endpoints is optional (defaults to None)
     g = runtime._add_agnocast_nodes(g, agnocast_only, node_topics)
 
     self.assertIn('"/detector"', g.nodes)
@@ -515,9 +484,6 @@ class TestProcessBridgeNodes(unittest.TestCase):
 class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
   """Integration tests for extend_agnocast_runtime with mocked subprocess."""
 
-  # Patch target: the subprocess module inside the runtime module object
-  _PATCH_TARGET = f'{runtime.__name__}.subprocess.run'
-
   def _mock_run(self, cmd_outputs: dict):
     """Create a side_effect function for subprocess.run mock.
 
@@ -614,7 +580,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
         result.stderr = 'not found'
       return result
 
-    with patch.object(runtime.subprocess, 'run', side_effect=side_effect):
+    with patch('subprocess.run', side_effect=side_effect):
       g = _make_simple_graph()
       g = runtime.extend_agnocast_runtime(g)
 
@@ -632,7 +598,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
 
   def test_cli_failure_graceful(self):
     """When CLI fails completely, graph gets default attributes."""
-    with patch.object(runtime.subprocess, 'run',
+    with patch('subprocess.run',
               side_effect=FileNotFoundError("ros2 not found")):
       g = _make_simple_graph()
       g = runtime.extend_agnocast_runtime(g)
@@ -673,7 +639,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       result.stdout = ''
       return result
 
-    with patch.object(runtime.subprocess, 'run', side_effect=side_effect):
+    with patch('subprocess.run', side_effect=side_effect):
       g = _make_simple_graph()
       g = runtime.extend_agnocast_runtime(g)
 
@@ -691,7 +657,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
     )
     # topic list returns empty (simpler test)
     topic_list_output = ""
-    with patch.object(runtime.subprocess, 'run',
+    with patch('subprocess.run',
               side_effect=self._mock_run({
                 'node list_agnocast': node_list_output,
                 'topic list_agnocast': topic_list_output,

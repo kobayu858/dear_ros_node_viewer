@@ -13,12 +13,11 @@
 # limitations under the License.
 """Tests for caret_extend_agnocast module"""
 
-import json
 import os
 import sys
-import tempfile
 import pytest
 import networkx as nx
+import yaml
 
 # Add src to path so we can import the package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -28,7 +27,6 @@ from dear_ros_node_viewer.caret_extend_agnocast import (
   _mark_agnocast_nodes,
   _mark_bridge_nodes,
   _synthesize_bridge_direct_edges,
-  load_agnocast_info,
   _mark_agnocast_node_types,
   extend_agnocast,
 )
@@ -49,9 +47,9 @@ def make_graph_with_topics(edges: list[tuple[str, str, str]]) -> nx.MultiDiGraph
   return graph
 
 
-def write_json(path: str, data: dict):
+def write_yaml(path: str, data: dict):
   with open(path, 'w', encoding='UTF-8') as f:
-    json.dump(data, f)
+    yaml.dump(data, f)
 
 
 # ===================================================================
@@ -110,7 +108,7 @@ class TestMarkAgnocastNodes:
     _mark_agnocast_edges(graph)
     _mark_agnocast_nodes(graph)
 
-    assert graph.nodes['"node_a"' if '"node_a"' in graph.nodes else '"/node_a"']['has_agnocast'] is True
+    assert graph.nodes['"/node_a"']['has_agnocast'] is True
     assert graph.nodes['"/node_b"']['has_agnocast'] is True
     assert graph.nodes['"/node_c"']['has_agnocast'] is False
     assert graph.nodes['"/node_d"']['has_agnocast'] is False
@@ -220,56 +218,18 @@ class TestBridgeDetection:
 
 
 # ===================================================================
-# 1-4. JSON loading + node type classification
+# 1-4. Node type classification via YAML
 # ===================================================================
 
-class TestAgnocastInfoLoading:
-  """Tests for load_agnocast_info and _mark_agnocast_node_types"""
-
-  def test_valid_json(self, tmp_path):
-    json_file = str(tmp_path / 'agnocast_info.json')
-    write_json(json_file, {
-      'version': 1,
-      'agnocast_nodes': ['/ns/node_a']
-    })
-    info = load_agnocast_info(json_file)
-    assert info is not None
-    assert info['agnocast_nodes'] == ['/ns/node_a']
-
-  def test_unsupported_version(self, tmp_path):
-    json_file = str(tmp_path / 'agnocast_info.json')
-    write_json(json_file, {
-      'version': 2,
-      'agnocast_nodes': ['/ns/node_a']
-    })
-    info = load_agnocast_info(json_file)
-    assert info is None
-
-  def test_missing_file(self):
-    info = load_agnocast_info('/nonexistent/path.json')
-    assert info is None
-
-  def test_none_file(self):
-    info = load_agnocast_info(None)
-    assert info is None
-
-  def test_invalid_json(self, tmp_path):
-    json_file = str(tmp_path / 'bad.json')
-    with open(json_file, 'w') as f:
-      f.write('not json{{{')
-    info = load_agnocast_info(json_file)
-    assert info is None
-
-  def test_missing_agnocast_nodes_field(self, tmp_path):
-    json_file = str(tmp_path / 'agnocast_info.json')
-    write_json(json_file, {'version': 1})
-    info = load_agnocast_info(json_file)
-    assert info is None
+class TestMarkAgnocastNodeTypes:
+  """Tests for _mark_agnocast_node_types (reads architecture YAML)"""
 
   def test_node_type_classification(self, tmp_path):
-    # /node_a publishes agnocast topic -> has_agnocast = True
-    # /node_b subscribes agnocast topic -> has_agnocast = True
-    # /node_c has no agnocast topic -> has_agnocast = False
+    """
+    /node_a belongs to agnocast_only_* executor -> agnocast_node (③)
+    /node_b has_agnocast but not in agnocast_only executor -> rclcpp_with_agnocast (②)
+    /node_c has no agnocast -> rclcpp_only (①)
+    """
     graph = make_graph_with_topics([
       ('/node_a', '/node_b', '/topic_agnocast'),
       ('/node_c', '/node_b', '/normal_topic'),
@@ -277,28 +237,66 @@ class TestAgnocastInfoLoading:
     _mark_agnocast_edges(graph)
     _mark_agnocast_nodes(graph)
 
-    # /node_a is listed as agnocast_node -> type ③
-    # /node_b is not listed but has_agnocast -> type ②
-    # /node_c has no agnocast -> type ①
-    agnocast_info = {
-      'version': 1,
-      'agnocast_nodes': ['/node_a']
+    # Build architecture YAML linking /node_a to agnocast_only executor
+    arch = {
+      'executors': [
+        {
+          'executor_type': 'agnocast_only_single_threaded',
+          'callback_group_names': ['/node_a/cbg_0'],
+        }
+      ],
+      'nodes': [
+        {
+          'node_name': '/node_a',
+          'callback_groups': [
+            {'callback_group_name': '/node_a/cbg_0'}
+          ],
+        },
+        {
+          'node_name': '/node_b',
+          'callback_groups': [],
+        },
+        {
+          'node_name': '/node_c',
+          'callback_groups': [],
+        },
+      ],
     }
-    _mark_agnocast_node_types(graph, agnocast_info)
+    yaml_file = str(tmp_path / 'architecture.yaml')
+    write_yaml(yaml_file, arch)
+
+    _mark_agnocast_node_types(graph, yaml_file)
 
     assert graph.nodes['"/node_a"']['agnocast_node_type'] == 'agnocast_node'
     assert graph.nodes['"/node_b"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
     assert graph.nodes['"/node_c"']['agnocast_node_type'] == 'rclcpp_only'
 
+  def test_empty_yaml(self, tmp_path):
+    """Empty YAML should classify all nodes as rclcpp_only or rclcpp_with_agnocast"""
+    graph = make_graph_with_topics([
+      ('/node_a', '/node_b', '/topic_agnocast'),
+    ])
+    _mark_agnocast_edges(graph)
+    _mark_agnocast_nodes(graph)
+
+    yaml_file = str(tmp_path / 'architecture.yaml')
+    write_yaml(yaml_file, {'nodes': [], 'executors': []})
+
+    _mark_agnocast_node_types(graph, yaml_file)
+
+    # No agnocast_only executors -> no agnocast_node type
+    assert graph.nodes['"/node_a"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
+    assert graph.nodes['"/node_b"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
+
 
 # ===================================================================
-# 1-5. Graceful degradation (no JSON)
+# 1-5. Graceful degradation (no node type classification)
 # ===================================================================
 
 class TestGracefulDegradation:
-  """Tests that everything works without JSON file"""
+  """Tests that everything works without calling _mark_agnocast_node_types"""
 
-  def test_extend_without_json(self):
+  def test_extend_without_node_type(self):
     graph = make_graph_with_topics([
       ('/node_a', '/node_b', '/topic_agnocast'),
       ('/node_c', '/node_d', '/normal'),
@@ -325,21 +323,25 @@ class TestGracefulDegradation:
 class TestExtendAgnocastIntegration:
   """Integration tests for the full extend_agnocast function"""
 
-  def test_full_pipeline_without_json(self, tmp_path):
-    """Test the full pipeline with YAML-only (no JSON)"""
-
-    # Create a minimal architecture.yaml (not actually read by extend_agnocast
-    # since we pass a pre-built graph, but filename is required)
+  def _make_minimal_yaml(self, tmp_path, extra_nodes=None, executors=None):
+    arch = {
+      'nodes': extra_nodes or [],
+      'executors': executors or [],
+    }
     yaml_file = str(tmp_path / 'architecture.yaml')
-    with open(yaml_file, 'w') as f:
-      f.write('nodes: []\n')
+    write_yaml(yaml_file, arch)
+    return yaml_file
+
+  def test_full_pipeline_basic(self, tmp_path):
+    """Basic pipeline: agnocast edges and nodes are marked correctly"""
+    yaml_file = self._make_minimal_yaml(tmp_path)
 
     graph = make_graph_with_topics([
       ('/tracker', '/planner', '/tracks_agnocast'),
       ('/sensor', '/tracker', '/raw_data'),
     ])
 
-    result = extend_agnocast(yaml_file, graph, agnocast_file=None)
+    result = extend_agnocast(yaml_file, graph)
 
     # Verify edge attributes
     for e in result.edges:
@@ -354,29 +356,38 @@ class TestExtendAgnocastIntegration:
     assert result.nodes['"/planner"']['has_agnocast'] is True
     assert result.nodes['"/sensor"']['has_agnocast'] is False
 
-    # No node types without JSON
-    for n in result.nodes:
-      assert 'agnocast_node_type' not in result.nodes[n]
-
-  def test_full_pipeline_with_json(self, tmp_path):
-    """Test the full pipeline with JSON supplementary file"""
-
-    yaml_file = str(tmp_path / 'architecture.yaml')
-    with open(yaml_file, 'w') as f:
-      f.write('nodes: []\n')
-
-    json_file = str(tmp_path / 'agnocast_info.json')
-    write_json(json_file, {
-      'version': 1,
-      'agnocast_nodes': ['/tracker']
-    })
+  def test_full_pipeline_with_agnocast_only_executor(self, tmp_path):
+    """Pipeline with agnocast_only executor sets agnocast_node_type correctly"""
+    yaml_file = self._make_minimal_yaml(
+      tmp_path,
+      extra_nodes=[
+        {
+          'node_name': '/tracker',
+          'callback_groups': [{'callback_group_name': '/tracker/cbg_0'}],
+        },
+        {
+          'node_name': '/planner',
+          'callback_groups': [],
+        },
+        {
+          'node_name': '/sensor',
+          'callback_groups': [],
+        },
+      ],
+      executors=[
+        {
+          'executor_type': 'agnocast_only_single_threaded',
+          'callback_group_names': ['/tracker/cbg_0'],
+        }
+      ],
+    )
 
     graph = make_graph_with_topics([
       ('/tracker', '/planner', '/tracks_agnocast'),
       ('/sensor', '/tracker', '/raw_data'),
     ])
 
-    result = extend_agnocast(yaml_file, graph, agnocast_file=json_file)
+    result = extend_agnocast(yaml_file, graph)
 
     assert result.nodes['"/tracker"']['agnocast_node_type'] == 'agnocast_node'
     assert result.nodes['"/planner"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
@@ -384,10 +395,7 @@ class TestExtendAgnocastIntegration:
 
   def test_full_pipeline_with_bridge(self, tmp_path):
     """Test bridge node handling in full pipeline"""
-
-    yaml_file = str(tmp_path / 'architecture.yaml')
-    with open(yaml_file, 'w') as f:
-      f.write('nodes: []\n')
+    yaml_file = self._make_minimal_yaml(tmp_path)
 
     graph = nx.MultiDiGraph()
     graph.add_edge('"/tracker"', '"agnocast_bridge_node_999"',
@@ -395,7 +403,7 @@ class TestExtendAgnocastIntegration:
     graph.add_edge('"agnocast_bridge_node_999"', '"/planner"',
             label='/tracks')
 
-    result = extend_agnocast(yaml_file, graph, agnocast_file=None)
+    result = extend_agnocast(yaml_file, graph)
 
     # Bridge node identified
     assert result.nodes['"agnocast_bridge_node_999"']['is_bridge_node'] is True
