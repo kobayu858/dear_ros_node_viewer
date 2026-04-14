@@ -291,7 +291,9 @@ class GraphViewModel:
     """ Update edge name """
     for nodeedge_name, text_id in self.dpg_bind['nodeedge_text'].items():
       edgename = nodeedge_name.split('###')[-1]
-      dpg.set_value(text_id, value=self.omit_name(edgename, omit_type))
+      display_edgename = edgename.replace('_agnocast', '')
+      dpg.set_value(text_id, value=self.omit_name(display_edgename, omit_type))
+      #dpg.set_value(text_id, value=self.omit_name(edgename, omit_type))
 
   def omit_name(self, name: str, omit_type: OmitType) -> str:
     """ replace an original name to a name to be displayed """
