@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "source": "babeltrace",
+  "agnocast_nodes": [
+    "/detector",
+    "/planner"
+  ]
+}
