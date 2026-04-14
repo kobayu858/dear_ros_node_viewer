@@ -96,11 +96,11 @@ class GraphViewModel:
     self.graph_manager.load_graph_from_running_ros()
     self._reset_internl_status()
 
-  def load_graph(self, graph_filename: str, agnocast_file: str | None = None):
+  def load_graph(self, graph_filename: str):
     """Load Graph from file"""
     if '.yaml' in graph_filename:
       try:
-        self.graph_manager.load_graph_from_caret(graph_filename, agnocast_file=agnocast_file)
+        self.graph_manager.load_graph_from_caret(graph_filename)
       except FileNotFoundError as err:
         logger.error(err)
     elif '.dot' in graph_filename:
@@ -122,6 +122,9 @@ class GraphViewModel:
     self.dpg_bind['id_edge'].clear()
     self.dpg_bind['edge_color'].clear()
     self.dpg_bind['callbackgroup_id'].clear()
+    self.dpg_bind['bridge_node_ids'].clear()
+    self.dpg_bind['bridge_edge_ids'].clear()
+    self.dpg_bind['bridged_direct_edge_ids'].clear()
     self.node_selected_dict.clear()
     for node_name in self.get_graph().nodes:
       self.node_selected_dict[node_name] = False

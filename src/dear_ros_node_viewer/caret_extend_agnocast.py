@@ -17,7 +17,6 @@ Adds is_agnocast/has_agnocast properties and bridge node handling.
 """
 
 from __future__ import annotations
-import json
 import networkx as nx
 import yaml
 from .caret2networkx import quote_name
@@ -27,6 +26,7 @@ logger = LoggerFactory.create(__name__)
 
 AGNOCAST_TOPIC_SUFFIX = '_agnocast'
 BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
+AGNOCAST_ONLY_EXECUTOR_PREFIX = 'agnocast_only_'
 
 
 def _mark_agnocast_edges(graph: nx.MultiDiGraph) -> None:
@@ -125,62 +125,38 @@ def _synthesize_bridge_direct_edges(graph: nx.MultiDiGraph) -> None:
           upstream_node, downstream_node, label_src, label_dst)
 
 
-def load_agnocast_info(agnocast_file: str) -> dict | None:
+def _mark_agnocast_node_types(graph: nx.MultiDiGraph, filename: str) -> None:
   """
-  Load agnocast_info.json (optional supplementary file).
+  Set agnocast_node_type based on executor_type in architecture YAML.
 
-  Parameters
-  ----------
-  agnocast_file : str
-    Path to agnocast_info.json
-
-  Returns
-  -------
-  dict | None
-    Parsed JSON content, or None if file is invalid/missing
-  """
-  if agnocast_file is None:
-    return None
-
-  try:
-    with open(agnocast_file, encoding='UTF-8') as f:
-      info = json.load(f)
-  except FileNotFoundError:
-    logger.warning('Agnocast info file not found: %s', agnocast_file)
-    return None
-  except json.JSONDecodeError as e:
-    logger.warning('Failed to parse agnocast info file: %s (%s)', agnocast_file, e)
-    return None
-
-  version = info.get('version', 1)
-  if version != 1:
-    logger.warning(
-      'Unsupported agnocast_info.json version: %s (expected 1). Ignoring file.',
-      version)
-    return None
-
-  if 'agnocast_nodes' not in info:
-    logger.warning('agnocast_info.json missing "agnocast_nodes" field. Ignoring file.')
-    return None
-
-  return info
-
-
-def _mark_agnocast_node_types(graph: nx.MultiDiGraph, agnocast_info: dict) -> None:
-  """
-  Set agnocast_node_type based on supplementary file.
+  Traces: executor (executor_type) -> callback_group_names -> node
+  Executor types prefixed with 'agnocast_only_' identify agnocast::Node (③).
 
   Types:
-    'agnocast_node'        — listed in agnocast_nodes (③)
-    'rclcpp_with_agnocast' — not listed but has_agnocast is True (②)
+    'agnocast_node'        — belongs to agnocast_only_* executor (③)
+    'rclcpp_with_agnocast' — not agnocast_only but has_agnocast is True (②)
     'rclcpp_only'          — has_agnocast is False (①)
   """
-  agnocast_node_set = set()
-  for name in agnocast_info.get('agnocast_nodes', []):
-    agnocast_node_set.add(quote_name(name))
+  with open(filename, encoding='UTF-8') as f:
+    arch = yaml.safe_load(f)
+
+  # Collect callback_group_names belonging to agnocast_only_* executors
+  agnocast_only_cbg_names: set[str] = set()
+  for executor in arch.get('executors', []):
+    executor_type = executor.get('executor_type', '')
+    if executor_type.startswith(AGNOCAST_ONLY_EXECUTOR_PREFIX):
+      for cbg_name in executor.get('callback_group_names', []):
+        agnocast_only_cbg_names.add(cbg_name)
+
+  # Map callback_group_name -> node_name to find agnocast_only nodes
+  agnocast_only_nodes: set[str] = set()
+  for node in arch.get('nodes', []):
+    for cbg in node.get('callback_groups', []):
+      if cbg.get('callback_group_name', '') in agnocast_only_cbg_names:
+        agnocast_only_nodes.add(quote_name(node['node_name']))
 
   for node_name in graph.nodes:
-    if node_name in agnocast_node_set:
+    if node_name in agnocast_only_nodes:
       graph.nodes[node_name]['agnocast_node_type'] = 'agnocast_node'
     elif graph.nodes[node_name].get('has_agnocast', False):
       graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_with_agnocast'
@@ -189,8 +165,7 @@ def _mark_agnocast_node_types(graph: nx.MultiDiGraph, agnocast_info: dict) -> No
 
 
 def extend_agnocast(filename: str,
-          graph: nx.MultiDiGraph,
-          agnocast_file: str | None = None) -> nx.MultiDiGraph:
+          graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   """
   Add Agnocast attributes to a graph.
 
@@ -199,16 +174,14 @@ def extend_agnocast(filename: str,
     2. Mark nodes with has_agnocast based on connected edges
     3. Identify bridge nodes by name pattern
     4. Synthesize direct edges for bridge bypass (Show Bridge OFF)
-    5. (Optional) Set agnocast_node_type from supplementary JSON
+    5. Set agnocast_node_type from executor_type in architecture YAML
 
   Parameters
   ----------
   filename : str
-    Path to architecture.yaml (used for YAML-based detection)
+    Path to architecture.yaml
   graph : nx.MultiDiGraph
     Graph to extend (modified in-place)
-  agnocast_file : str | None
-    Path to agnocast_info.json (optional)
 
   Returns
   -------
@@ -227,13 +200,8 @@ def extend_agnocast(filename: str,
   # Step 4: Synthesize direct edges for bridge bypass
   _synthesize_bridge_direct_edges(graph)
 
-  # Step 5: (Optional) Set node types from supplementary file
-  agnocast_info = load_agnocast_info(agnocast_file)
-  if agnocast_info is not None:
-    _mark_agnocast_node_types(graph, agnocast_info)
-    logger.info('Agnocast node types set from: %s', agnocast_file)
-  else:
-    logger.info('No agnocast info file; node type classification skipped')
+  # Step 5: Set node types from executor_type in YAML
+  _mark_agnocast_node_types(graph, filename)
 
   # Log summary
   agnocast_edge_count = sum(

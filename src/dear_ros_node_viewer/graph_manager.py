@@ -39,13 +39,12 @@ class GraphManager:
     self.graph: nx.DiGraph = nx.MultiDiGraph()
     self.caret_path_dict: dict = {}
 
-  def load_graph_from_caret(self, filename: str, target_path: str = 'all_graph',
-               agnocast_file: str | None = None):
+  def load_graph_from_caret(self, filename: str, target_path: str = 'all_graph'):
     """ load_graph_from_caret """
     self.graph = caret2networkx(filename, target_path,
                   self.app_setting['display_unconnected_nodes'])
     self.graph = extend_callback_group(filename, self.graph)
-    self.graph = extend_agnocast(filename, self.graph, agnocast_file)
+    self.graph = extend_agnocast(filename, self.graph)
     self.load_graph_postprocess(filename)
     self.caret_path_dict.update(get_path_dict(filename))
 

@@ -134,7 +134,6 @@ def parse_args():
   parser.add_argument('--displace_new_node', type=strtobool, default=False)
   parser.add_argument('--bg_white', type=strtobool, default=False, help='Use white background')
   parser.add_argument('--save_only', type=strtobool, default=False, help='Save dot file only for CLI')
-  parser.add_argument('--agnocast_json_file', type=str, default=None, help='By using it in conjunction with Caret YAML, you can visualize the differences in Node.')
   args = parser.parse_args()
 
   logger.debug(f'args.graph_file = {args.graph_file}')
@@ -144,7 +143,6 @@ def parse_args():
   logger.debug(f'args.displace_new_node = {args.displace_new_node}')
   logger.debug(f'args.bg_white = {args.bg_white}')
   logger.debug(f'args.save_only = {args.save_only}')
-  logger.debug(f'args.agnocast_json_file = {args.agnocast_json_file}')
 
   return args
 
@@ -186,4 +184,4 @@ def main():
   graph_filename = args.graph_file
 
   dpg = GraphView(app_setting, group_setting)
-  dpg.start(graph_filename, args.display_callback_detail, app_setting['window_size'][0], app_setting['window_size'][1], agnocast_file=args.agnocast_json_file)
+  dpg.start(graph_filename, args.display_callback_detail, app_setting['window_size'][0], app_setting['window_size'][1])

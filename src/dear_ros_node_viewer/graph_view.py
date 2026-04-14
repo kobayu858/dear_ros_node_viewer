@@ -51,7 +51,7 @@ class GraphView:
       self.color_node_bar = [val + 180 for val in self.color_node_bar]
       self.color_node_back = [val + 180 for val in self.color_node_back]
 
-  def start(self, graph_filename: str, display_cb_detail: bool, window_width: int = 1920, window_height: int = 1080, agnocast_file: str | None = None):
+  def start(self, graph_filename: str, display_cb_detail: bool, window_width: int = 1920, window_height: int = 1080):
     """ Start Dear PyGui context """
     dpg.create_context()
     dpg.create_viewport(
@@ -72,7 +72,7 @@ class GraphView:
       self.add_menu_in_dpg()
 
     self._setup_mermaid_export_dialog()
-    self.graph_viewmodel.load_graph(graph_filename, agnocast_file=agnocast_file)
+    self.graph_viewmodel.load_graph(graph_filename)
     self.update_node_editor(self.app_setting['bg_white'], display_cb_detail)
 
     # Update node position and font according to the default graph size and font size
@@ -208,11 +208,11 @@ class GraphView:
           dpg.add_item_clicked_handler(callback=self._cb_node_clicked)
           dpg.bind_item_handler_registry(node_id, node_select_handler)
 
-        # Add text for node I/O(topics)
+        # Add text for node I/O (topics) and callback groups
         self.add_node_attr_in_dpg(node_name, display_cb_detail)
 
         # Register and hide bridge nodes by default
-        if graph.nodes[node_name].get('is_bridge_node', False):
+        if is_bridge:
           self.graph_viewmodel.add_dpg_bridge_node_id(node_name, node_id)
           dpg.hide_item(node_id)
 
@@ -245,18 +245,15 @@ class GraphView:
     for edge in edge_list_pub:
       with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output) as attr_id:
         text_id = dpg.add_text(default_value=edge)
-        self.graph_viewmodel.add_dpg_nodeedge_idtext(node_name, edge,
-                               attr_id, text_id)
+        self.graph_viewmodel.add_dpg_nodeedge_idtext(node_name, edge, attr_id, text_id)
 
     # Workaround for https://github.com/hoffstadt/DearPyGui/issues/2444
-    # Otherwise, Nodes with the first attribute "empty" expand infinitely in width
     if not edge_list_pub and not edge_list_sub:
-      with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output) :
-        dpg.add_text("")
+      with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output):
+        dpg.add_text('')
 
-    # Add text for executor/callbackgroups
+    # Add callback group info
     self.add_node_callbackgroup_in_dpg(node_name, display_cb_detail)
-    # Hide by default
     self.graph_viewmodel.display_callbackgroup(False)
 
   def add_node_callbackgroup_in_dpg(self, node_name, display_cb_detail: bool):
@@ -267,7 +264,6 @@ class GraphView:
       for callback_group in callback_group_list:
         executor_name = callback_group['executor_name']
         callback_group_name = callback_group['callback_group_name']
-        # callback_group_type = callback_group['callback_group_type']
         callback_group_name = self.graph_viewmodel.omit_name(
           callback_group_name, GraphViewModel.OmitType.LAST)
         callback_detail_list = callback_group['callback_detail_list']
@@ -276,7 +272,6 @@ class GraphView:
           dpg.add_text('=== Callback Group [' + executor_name + '] ===', color=color)
           if display_cb_detail:
             for callback_detail in callback_detail_list:
-              # callback_name = callback_detail['callback_name']
               callback_type = callback_detail['callback_type']
               description = callback_detail['description']
               description = self.graph_viewmodel.omit_name(
@@ -292,18 +287,26 @@ class GraphView:
     for edge in graph.edges:
       if 'label' in graph.edges[edge]:
         label = graph.edges[edge]['label']
-        # Bridged (synthesized) edges may have different topic names on
-        # publisher vs subscriber side (e.g. /topic_agnocast -> /topic).
         label_src = graph.edges[edge].get('label_src', label)
         label_dst = graph.edges[edge].get('label_dst', label)
-        edge_id = dpg.add_node_link(
-          self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], label_src),
-          self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], label_dst))
+        try:
+          edge_id = dpg.add_node_link(
+            self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], label_src),
+            self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], label_dst),
+            parent=self.dpg_id_editor)
+        except KeyError:
+          logger.debug('Edge attr not found: %s -> %s (%s)', edge[0], edge[1], label)
+          continue
         self.graph_viewmodel.add_dpg_id_edge(label, edge_id)
       else:
-        edge_id = dpg.add_node_link(
-          self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], 'out'),
-          self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], 'in'))
+        try:
+          edge_id = dpg.add_node_link(
+            self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], 'out'),
+            self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], 'in'),
+            parent=self.dpg_id_editor)
+        except KeyError:
+          logger.debug('Edge attr not found: %s -> %s', edge[0], edge[1])
+          continue
 
       # Set color using the unified color resolver
       with dpg.theme() as theme_id:
@@ -437,7 +440,7 @@ class GraphView:
   def _cb_menu_node_diff_toggle(self, sender, app_data, user_data):
     """Toggle Node Diff coloring"""
     if not self.graph_viewmodel.has_node_type_info():
-      logger.info('Node type info not available (no agnocast_info.json)')
+      logger.info('Node type info not available (no agnocast_only executor found in YAML)')
       return
     current = self.graph_viewmodel.agnocast_display['show_node_diff']
     self.graph_viewmodel.toggle_node_diff_display(not current)
