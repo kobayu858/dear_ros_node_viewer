@@ -177,21 +177,27 @@ class GraphView:
         self.graph_viewmodel.add_dpg_node_id(node_name, node_id)
 
         # Set color
+        is_bridge = graph.nodes[node_name].get('is_bridge_node', False)
         with dpg.theme() as theme_id:
           with dpg.theme_component(dpg.mvNode):
+            if is_bridge:
+              title_color = self.graph_viewmodel.color_bridge_node
+            elif 'color' in graph.nodes[node_name]:
+              title_color = graph.nodes[node_name]['color']
+            else:
+              title_color = self.color_node_bar
             dpg.add_theme_color(
               dpg.mvNodeCol_TitleBar,
-              graph.nodes[node_name]['color']
-              if 'color' in graph.nodes[node_name]
-              else self.color_node_bar,
+              title_color,
               category=dpg.mvThemeCat_Nodes)
             dpg.add_theme_color(
               dpg.mvNodeCol_NodeBackgroundSelected,
               self.color_node_selected,
               category=dpg.mvThemeCat_Nodes)
+            initial_bg = self.graph_viewmodel._resolve_node_color(node_name)
             theme_color = dpg.add_theme_color(
               dpg.mvNodeCol_NodeBackground,
-              self.color_node_back,
+              initial_bg,
               category=dpg.mvThemeCat_Nodes)
             # Set color value
             self.graph_viewmodel.add_dpg_node_color(node_name, theme_color)
@@ -299,12 +305,13 @@ class GraphView:
           self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], 'out'),
           self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], 'in'))
 
-      # Set color. color is the same color as publisher
+      # Set color using the unified color resolver
       with dpg.theme() as theme_id:
         with dpg.theme_component(dpg.mvNodeLink):
+          initial_color = self.graph_viewmodel._resolve_edge_color(edge)
           theme_color = dpg.add_theme_color(
             dpg.mvNodeCol_Link,
-            graph.nodes[edge[0]]['color'],
+            initial_color,
             category=dpg.mvThemeCat_Nodes)
           self.graph_viewmodel.add_dpg_edge_color(edge, theme_color)
           dpg.bind_item_theme(edge_id, theme_id)

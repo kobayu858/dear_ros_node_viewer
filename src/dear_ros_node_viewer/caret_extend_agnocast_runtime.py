@@ -492,10 +492,15 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
     - ``'rclcpp_with_agnocast'`` for ② nodes
     - ``'rclcpp_only'`` for ① nodes
   """
-  # Collect nodes that touch an agnocast edge
+  # Collect nodes that touch an agnocast edge.
+  # Bridged (synthesized) edges are skipped entirely — they are shortcuts
+  # across a bridge node and don't indicate that the endpoint nodes
+  # themselves use Agnocast.  The real Agnocast edges (③↔③, ②→③, etc.)
+  # already cover the correct nodes.
   nodes_with_agnocast: set[str] = set()
   for edge in graph.edges:
-    if graph.edges[edge].get('is_agnocast', False):
+    if graph.edges[edge].get('is_agnocast', False) \
+        and not graph.edges[edge].get('is_bridged', False):
       src, dst, _ = edge
       nodes_with_agnocast.add(src)
       nodes_with_agnocast.add(dst)
@@ -689,10 +694,11 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   # --- Step 5: Mark is_agnocast on edges ---
   graph = _mark_agnocast_edges(graph, topic_endpoints)
 
-  # --- Step 6: Mark node attributes ---
-  graph = _mark_agnocast_nodes(graph, agnocast_only_nodes)
-
-  # --- Step 7: Bridge processing ---
+  # --- Step 6: Bridge processing ---
+  # (must run before node marking so is_bridged info is available)
   graph = _process_bridge_nodes(graph)
+
+  # --- Step 7: Mark node attributes ---
+  graph = _mark_agnocast_nodes(graph, agnocast_only_nodes)
 
   return graph
