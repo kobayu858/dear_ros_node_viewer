@@ -15,7 +15,7 @@
 Shared utilities for Agnocast graph processing.
 
 Used by both caret_extend_agnocast.py (static/YAML input) and
-caret_extend_agnocast_runtime.py (dynamic/CLI input).
+agnocast_extend_runtime.py (dynamic/CLI input).
 """
 
 from __future__ import annotations

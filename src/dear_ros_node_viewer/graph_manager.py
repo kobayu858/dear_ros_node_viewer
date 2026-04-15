@@ -20,7 +20,7 @@ from .logger_factory import LoggerFactory
 from .caret2networkx import caret2networkx
 from .caret_extend_callback_group import extend_callback_group
 from .caret_extend_agnocast import extend_agnocast
-from .caret_extend_agnocast_runtime import extend_agnocast_runtime
+from .agnocast_extend_runtime import extend_agnocast_runtime
 from .caret_extend_path import get_path_dict
 from .dot2networkx import dot2networkx
 from .ros2networkx import Ros2Networkx

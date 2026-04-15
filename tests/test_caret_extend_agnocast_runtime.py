@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Unit tests for caret_extend_agnocast_runtime.py
+Unit tests for agnocast_extend_runtime.py
 
 Tests are grouped:
   - Parser tests: verify CLI output parsing logic
@@ -30,7 +30,7 @@ import networkx as nx
 # Add src to path so we can import the package normally
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from dear_ros_node_viewer import caret_extend_agnocast_runtime as runtime
+from dear_ros_node_viewer import agnocast_extend_runtime as runtime
 from dear_ros_node_viewer.agnocast_extend_utils import (
   mark_bridge_nodes,
   synthesize_bridge_direct_edges,
