@@ -22,6 +22,11 @@ import pydot
 
 from .logger_factory import LoggerFactory
 from .caret2networkx import make_graph_from_topic_association
+from .agnocast_extend_utils import (
+  AGNOCAST_NODE_ATTRS,
+  AGNOCAST_EDGE_ATTRS,
+  coerce_dot_attr,
+)
 
 logger = LoggerFactory.create(__name__)
 
@@ -36,6 +41,15 @@ def dot2networkx_nodeonly(graph_org: nx.classes.digraph.DiGraph,
     label = graph_org.nodes[node_org]['label']
     if display_unconnected_nodes:
       graph.add_node(label)
+    # Agnocast node attributes (present when loaded from an Agnocast-annotated dot)
+    node_data = graph_org.nodes[node_org]
+    agnocast_node_attrs = {
+      attr: coerce_dot_attr(attr, node_data[attr])
+      for attr in AGNOCAST_NODE_ATTRS
+      if attr in node_data
+    }
+    if agnocast_node_attrs:
+      graph.add_node(label, **agnocast_node_attrs)
 
   for edge in graph_org.edges:
     if 'label' not in graph_org.nodes[edge[0]] or 'label' not in graph_org.nodes[edge[1]] or 'label' not in graph_org.edges[edge]:
@@ -43,7 +57,14 @@ def dot2networkx_nodeonly(graph_org: nx.classes.digraph.DiGraph,
     node_pub = graph_org.nodes[edge[0]]['label']
     node_sub = graph_org.nodes[edge[1]]['label']
     label = graph_org.edges[edge]['label']
-    graph.add_edge(node_pub, node_sub, label=label)
+    # Agnocast edge attributes (present when loaded from an Agnocast-annotated dot)
+    edge_data = graph_org.edges[edge]
+    agnocast_edge_attrs = {
+      attr: coerce_dot_attr(attr, edge_data[attr])
+      for attr in AGNOCAST_EDGE_ATTRS
+      if attr in edge_data
+    }
+    graph.add_edge(node_pub, node_sub, label=label, **agnocast_edge_attrs)
 
   return graph
 

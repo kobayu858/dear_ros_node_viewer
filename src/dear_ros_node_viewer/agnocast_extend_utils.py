@@ -27,6 +27,32 @@ logger = LoggerFactory.create(__name__)
 BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
 AGNOCAST_TOPIC_SUFFIX = '_agnocast'
 
+# --- Agnocast attribute names (single source of truth) --------------------
+# Used by dot2networkx (read) and graph_manager/save_agnocast_dot (write).
+AGNOCAST_NODE_ATTRS = ('agnocast_node_type', 'is_bridge_node')
+AGNOCAST_EDGE_ATTRS = ('is_agnocast', 'is_bridge_edge', 'is_bridged',
+                       'label_src', 'label_dst')
+
+# Attributes that are bool in the NetworkX graph but stored as strings in dot.
+_AGNOCAST_BOOL_ATTRS = frozenset({
+  'is_bridge_node', 'is_agnocast', 'is_bridge_edge', 'is_bridged',
+})
+
+
+def coerce_dot_attr(key: str, value: str) -> object:
+  """Convert a dot attribute value to its proper Python type.
+
+  Dot files store every attribute as a string.  This helper converts
+  known boolean attributes back to ``bool`` so that downstream code
+  (e.g. ``edge_data.get('is_agnocast', False)``) works correctly —
+  the string ``"False"`` is truthy in Python and would otherwise cause
+  every edge to appear as Agnocast.
+  """
+  stripped = value.strip('"')
+  if key in _AGNOCAST_BOOL_ATTRS:
+    return stripped == 'True'
+  return stripped
+
 
 def base_topic(label: str) -> str:
   """Return the topic name with the Agnocast suffix stripped.
@@ -153,4 +179,3 @@ def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
       logger.debug(
         'Synthesized direct edge: %s -> %s (src=%s, dst=%s)',
         e['src'], e['dst'], e['label_src'], e['label_dst'])
-

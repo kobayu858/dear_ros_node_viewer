@@ -463,6 +463,20 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
 
 
 # ---------------------------------------------------------------------------
+# Dot snapshot detection
+# ---------------------------------------------------------------------------
+
+def _has_agnocast_attributes(graph: nx.MultiDiGraph) -> bool:
+  """Return True if the graph already has Agnocast attributes from a saved dot.
+
+  Checks whether at least one node carries ``agnocast_node_type``, which is
+  set only by ``extend_agnocast_runtime()`` or ``extend_agnocast()``.
+  When True, the dot was saved with Agnocast info and CLI queries can be skipped.
+  """
+  return any('agnocast_node_type' in graph.nodes[n] for n in graph.nodes)
+
+
+# ---------------------------------------------------------------------------
 # Default attributes (CLI failure fallback)
 # ---------------------------------------------------------------------------
 
@@ -505,6 +519,13 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   graph : nx.MultiDiGraph
       Same graph with Agnocast attributes added.
   """
+
+  # --- Snapshot check: skip CLI if dot already has Agnocast attributes ---
+  if _has_agnocast_attributes(graph):
+    logger.info('Agnocast attributes found in dot. Skipping CLI queries.')
+    mark_bridge_nodes(graph)
+    synthesize_bridge_direct_edges(graph, upgrade_existing_edges=True)
+    return graph
 
   # --- Step 1: ros2 node list_agnocast ---
   node_list_result = _fetch_node_list()
