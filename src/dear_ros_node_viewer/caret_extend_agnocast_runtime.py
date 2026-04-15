@@ -505,17 +505,13 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
       nodes_with_agnocast.add(src)
       nodes_with_agnocast.add(dst)
 
-  for node_name in graph.nodes:
-    has_agnocast = node_name in nodes_with_agnocast
-    graph.nodes[node_name]['has_agnocast'] = has_agnocast
-
   # Node type classification
   if agnocast_only_nodes is not None:
     quoted_agnocast_nodes = {_quote_name(n) for n in agnocast_only_nodes}
     for node_name in graph.nodes:
       if node_name in quoted_agnocast_nodes:
         graph.nodes[node_name]['agnocast_node_type'] = 'agnocast_node'
-      elif graph.nodes[node_name].get('has_agnocast', False):
+      elif node_name in nodes_with_agnocast:
         graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_with_agnocast'
       else:
         graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'

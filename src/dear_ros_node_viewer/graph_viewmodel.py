@@ -385,14 +385,6 @@ class GraphViewModel:
 
   # --- Agnocast display control ---
 
-  def has_agnocast_edges(self) -> bool:
-    """Check if the graph has any Agnocast edges"""
-    graph = self.get_graph()
-    for edge in graph.edges:
-      if graph.edges[edge].get('is_agnocast', False):
-        return True
-    return False
-
   def has_node_type_info(self) -> bool:
     """Check if any node has agnocast_node_type attribute"""
     graph = self.get_graph()
@@ -455,8 +447,7 @@ class GraphViewModel:
       1. Bridge node → orange (always, regardless of toggles)
       2. Show Node Diff ON + ③ node → teal
       3. Show Node Diff ON + ② node → cyan
-      4. Show Agnocast ON + has_agnocast → cyan
-      5. Show Agnocast ON + ②③ node → cyan
+      4. Show Agnocast ON + ②③ node → cyan
       5. Default → gray
     """
     graph = self.get_graph()
@@ -473,8 +464,6 @@ class GraphViewModel:
         return self.color_agnocast_node
 
     if self.agnocast_display['show_agnocast']:
-      if node_data.get('has_agnocast', False):
-        return self.color_agnocast_node
       node_type = node_data.get('agnocast_node_type', '')
       if node_type in ('rclcpp_with_agnocast', 'agnocast_node'):
         return self.color_agnocast_node
