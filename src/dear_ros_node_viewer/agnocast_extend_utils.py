@@ -62,7 +62,7 @@ def mark_bridge_nodes(graph: nx.MultiDiGraph) -> None:
 
 
 def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
-                    upgrade_existing_edges: bool = False) -> None:
+                                   upgrade_existing_edges: bool = False) -> None:
   """Synthesize direct edges that bypass bridge nodes.
 
   For each bridge node, pairs of (upstream node, downstream node) whose
@@ -79,25 +79,19 @@ def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
   upgrade_existing_edges : bool
       When True, an edge that already exists with the same src/dst/label
       is upgraded in-place with bridge attributes instead of adding a new
-      edge.  Set to True for the dynamic (runtime) path where Step 4 may
-      have already added ③ edges that overlap with the synthesized path.
-      Set to False (default) for the static (YAML) path where no such
-      prior edges exist.
+      edge.
   """
   bridge_nodes = [n for n in graph.nodes
-          if graph.nodes[n].get('is_bridge_node', False)]
+                  if graph.nodes[n].get('is_bridge_node', False)]
 
   edges_to_add: list[dict] = []
   for bridge_node in bridge_nodes:
-    upstream: list[tuple[str, str]] = []   # (src_node, label)
-    downstream: list[tuple[str, str]] = []  # (dst_node, label)
+    # NetworkXの機能を使って、ブリッジノードに直接繋がるエッジのみを取得 (O(degree)で済む)
+    upstream_edges = graph.in_edges(bridge_node, data=True)
+    downstream_edges = graph.out_edges(bridge_node, data=True)
 
-    for edge in graph.edges:
-      src, dst, _ = edge
-      if dst == bridge_node:
-        upstream.append((src, graph.edges[edge].get('label', '')))
-      elif src == bridge_node:
-        downstream.append((dst, graph.edges[edge].get('label', '')))
+    upstream = [(u, data.get('label', '')) for u, _, data in upstream_edges]
+    downstream = [(v, data.get('label', '')) for _, v, data in downstream_edges]
 
     for src, label_src in upstream:
       for dst, label_dst in downstream:
@@ -114,11 +108,14 @@ def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
 
     existing_key = None
     if upgrade_existing_edges and graph.has_edge(e['src'], e['dst']):
-      for key in graph[e['src']][e['dst']]:
-        edge_label = graph[e['src']][e['dst']][key].get('label', '').strip('"')
-        if edge_label == label_dst_bare:
-          existing_key = key
-          break
+      # 指定した src -> dst のエッジデータのみを取得
+      edge_data = graph.get_edge_data(e['src'], e['dst'])
+      if edge_data:
+        for key, data in edge_data.items():
+          edge_label = data.get('label', '').strip('"')
+          if edge_label == label_dst_bare:
+            existing_key = key
+            break
 
     if existing_key is not None:
       # Upgrade existing edge to synthesized bridge edge
@@ -145,3 +142,4 @@ def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
       logger.debug(
         'Synthesized direct edge: %s -> %s (src=%s, dst=%s)',
         e['src'], e['dst'], e['label_src'], e['label_dst'])
+

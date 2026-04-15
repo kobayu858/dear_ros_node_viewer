@@ -256,15 +256,14 @@ def _quote_name(name: str) -> str:
 
 
 def _edge_exists(graph: nx.MultiDiGraph,
-         src: str, dst: str, topic: str) -> bool:
+                 src: str, dst: str, topic: str) -> bool:
   """Check if an edge with the given topic label already exists."""
-  if graph.has_edge(src, dst):
-    for key in graph[src][dst]:
-      label = graph[src][dst][key].get('label', '').strip('"')
-      if label == topic:
-        return True
-  return False
-
+  edge_data = graph.get_edge_data(src, dst)
+  
+  if edge_data is None:
+    return False
+    
+  return any(data.get('label', '').strip('"') == topic for data in edge_data.values())
 
 # ---------------------------------------------------------------------------
 # Graph modification: add ③ nodes
