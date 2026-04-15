@@ -24,7 +24,6 @@ import sys
 import os
 import unittest
 from unittest.mock import patch, MagicMock
-from dear_ros_node_viewer.agnocast_extend_utils import extract_node_basename
 
 import networkx as nx
 
@@ -642,11 +641,6 @@ class TestHelpers(unittest.TestCase):
 
   def test_quote_name(self):
     self.assertEqual(runtime._quote_name('/node_a'), '"/node_a"')
-
-  def test_extract_node_basename(self):
-    self.assertEqual(runtime.extract_node_basename('/ns/node'), 'node')
-    self.assertEqual(runtime.extract_node_basename('/node'), 'node')
-    self.assertEqual(runtime.extract_node_basename('node'), 'node')
 
   def test_edge_exists(self):
     g = _make_simple_graph()

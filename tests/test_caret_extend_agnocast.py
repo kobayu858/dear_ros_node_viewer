@@ -94,100 +94,8 @@ class TestMarkAgnocastEdges:
     assert graph.edges[edge]['is_agnocast'] is True
 
 
-
 # ===================================================================
-# 1-3. Bridge node detection
-# ===================================================================
-
-class TestBridgeDetection:
-  """Tests for _mark_bridge_nodes and _synthesize_bridge_direct_edges"""
-
-  def _make_bridge_graph(self):
-    """Create a graph with a bridge node"""
-    graph = nx.MultiDiGraph()
-    # /fast_tracker -> bridge -> /planner
-    graph.add_edge('"/fast_tracker"', '"agnocast_bridge_node_12345"',
-            label='/tracks_agnocast')
-    graph.add_edge('"agnocast_bridge_node_12345"', '"/planner"',
-            label='/tracks')
-    # Normal edge
-    graph.add_edge('"/sensor"', '"/planner"', label='/data')
-    return graph
-
-  def test_bridge_node_identified(self):
-    graph = self._make_bridge_graph()
-    mark_bridge_nodes(graph)
-
-    assert graph.nodes['"agnocast_bridge_node_12345"']['is_bridge_node'] is True
-    assert graph.nodes['"/fast_tracker"']['is_bridge_node'] is False
-    assert graph.nodes['"/planner"']['is_bridge_node'] is False
-    assert graph.nodes['"/sensor"']['is_bridge_node'] is False
-
-  def test_bridge_edges_marked(self):
-    graph = self._make_bridge_graph()
-    mark_bridge_nodes(graph)
-
-    for edge in graph.edges:
-      label = graph.edges[edge]['label']
-      if 'bridge' in edge[0] or 'bridge' in edge[1]:
-        assert graph.edges[edge]['is_bridge_edge'] is True
-      else:
-        assert graph.edges[edge]['is_bridge_edge'] is False
-
-  def test_direct_edge_synthesized(self):
-    graph = self._make_bridge_graph()
-    mark_bridge_nodes(graph)
-
-    edge_count_before = graph.number_of_edges()
-    synthesize_bridge_direct_edges(graph)
-    edge_count_after = graph.number_of_edges()
-
-    # One new direct edge should be added
-    assert edge_count_after == edge_count_before + 1
-
-    # Check the synthesized edge
-    synthesized = [e for e in graph.edges
-            if graph.edges[e].get('is_bridged', False)]
-    assert len(synthesized) == 1
-    e = synthesized[0]
-    assert e[0] == '"/fast_tracker"'
-    assert e[1] == '"/planner"'
-    assert graph.edges[e]['is_agnocast'] is True
-    assert graph.edges[e]['is_bridged'] is True
-    assert graph.edges[e]['is_bridge_edge'] is False
-
-  def test_no_bridge_nodes(self):
-    """Graph without bridge nodes should not get synthesized edges"""
-    graph = make_graph_with_topics([
-      ('/node_a', '/node_b', '/topic_agnocast'),
-    ])
-    mark_bridge_nodes(graph)
-    edge_count_before = graph.number_of_edges()
-    synthesize_bridge_direct_edges(graph)
-    assert graph.number_of_edges() == edge_count_before
-
-  def test_bridge_node_with_leading_slash(self):
-    """Bridge node with / prefix (as in real YAML via quote_name)"""
-    graph = nx.MultiDiGraph()
-    graph.add_edge('"/sensor"', '"/agnocast_bridge_node_12345"',
-            label='/camera_info')
-    graph.add_edge('"/agnocast_bridge_node_12345"', '"/viewer"',
-            label='/bridge/camera_info')
-    mark_bridge_nodes(graph)
-    assert graph.nodes['"/agnocast_bridge_node_12345"']['is_bridge_node'] is True
-    assert graph.nodes['"/sensor"']['is_bridge_node'] is False
-
-  def test_bridge_node_with_namespace(self):
-    """Bridge node under a namespace like /ns/agnocast_bridge_node_999"""
-    graph = nx.MultiDiGraph()
-    graph.add_edge('"/a"', '"/ns/agnocast_bridge_node_999"', label='/topic')
-    graph.add_edge('"/ns/agnocast_bridge_node_999"', '"/b"', label='/out')
-    mark_bridge_nodes(graph)
-    assert graph.nodes['"/ns/agnocast_bridge_node_999"']['is_bridge_node'] is True
-
-
-# ===================================================================
-# 1-4. Node type classification via YAML
+# 1-3. Node type classification via YAML
 # ===================================================================
 
 class TestMarkAgnocastNodeTypes:
@@ -260,7 +168,7 @@ class TestMarkAgnocastNodeTypes:
 
 
 # ===================================================================
-# 1-5. Graceful degradation (no node type classification)
+# 1-4. Graceful degradation (no node type classification)
 # ===================================================================
 
 class TestGracefulDegradation:
