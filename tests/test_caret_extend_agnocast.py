@@ -24,11 +24,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from dear_ros_node_viewer.caret_extend_agnocast import (
   _mark_agnocast_edges,
-  _mark_agnocast_nodes,
-  _mark_bridge_nodes,
-  _synthesize_bridge_direct_edges,
   _mark_agnocast_node_types,
   extend_agnocast,
+)
+from dear_ros_node_viewer.agnocast_extend_utils import (
+  mark_bridge_nodes,
+  synthesize_bridge_direct_edges,
 )
 
 
@@ -93,38 +94,6 @@ class TestMarkAgnocastEdges:
     assert graph.edges[edge]['is_agnocast'] is True
 
 
-# ===================================================================
-# 1-2. Node has_agnocast derivation
-# ===================================================================
-
-class TestMarkAgnocastNodes:
-  """Tests for _mark_agnocast_nodes"""
-
-  def test_nodes_with_agnocast_edges(self):
-    graph = make_graph_with_topics([
-      ('/node_a', '/node_b', '/topic_agnocast'),
-      ('/node_c', '/node_d', '/normal_topic'),
-    ])
-    _mark_agnocast_edges(graph)
-    _mark_agnocast_nodes(graph)
-
-    assert graph.nodes['"/node_a"']['has_agnocast'] is True
-    assert graph.nodes['"/node_b"']['has_agnocast'] is True
-    assert graph.nodes['"/node_c"']['has_agnocast'] is False
-    assert graph.nodes['"/node_d"']['has_agnocast'] is False
-
-  def test_node_with_mixed_edges(self):
-    """A node with both agnocast and normal edges should be has_agnocast=True"""
-    graph = make_graph_with_topics([
-      ('/node_a', '/node_b', '/topic_agnocast'),
-      ('/node_a', '/node_c', '/normal_topic'),
-    ])
-    _mark_agnocast_edges(graph)
-    _mark_agnocast_nodes(graph)
-
-    assert graph.nodes['"/node_a"']['has_agnocast'] is True
-    assert graph.nodes['"/node_c"']['has_agnocast'] is False
-
 
 # ===================================================================
 # 1-3. Bridge node detection
@@ -147,7 +116,7 @@ class TestBridgeDetection:
 
   def test_bridge_node_identified(self):
     graph = self._make_bridge_graph()
-    _mark_bridge_nodes(graph)
+    mark_bridge_nodes(graph)
 
     assert graph.nodes['"agnocast_bridge_node_12345"']['is_bridge_node'] is True
     assert graph.nodes['"/fast_tracker"']['is_bridge_node'] is False
@@ -156,7 +125,7 @@ class TestBridgeDetection:
 
   def test_bridge_edges_marked(self):
     graph = self._make_bridge_graph()
-    _mark_bridge_nodes(graph)
+    mark_bridge_nodes(graph)
 
     for edge in graph.edges:
       label = graph.edges[edge]['label']
@@ -167,10 +136,10 @@ class TestBridgeDetection:
 
   def test_direct_edge_synthesized(self):
     graph = self._make_bridge_graph()
-    _mark_bridge_nodes(graph)
+    mark_bridge_nodes(graph)
 
     edge_count_before = graph.number_of_edges()
-    _synthesize_bridge_direct_edges(graph)
+    synthesize_bridge_direct_edges(graph)
     edge_count_after = graph.number_of_edges()
 
     # One new direct edge should be added
@@ -192,9 +161,9 @@ class TestBridgeDetection:
     graph = make_graph_with_topics([
       ('/node_a', '/node_b', '/topic_agnocast'),
     ])
-    _mark_bridge_nodes(graph)
+    mark_bridge_nodes(graph)
     edge_count_before = graph.number_of_edges()
-    _synthesize_bridge_direct_edges(graph)
+    synthesize_bridge_direct_edges(graph)
     assert graph.number_of_edges() == edge_count_before
 
   def test_bridge_node_with_leading_slash(self):
@@ -204,7 +173,7 @@ class TestBridgeDetection:
             label='/camera_info')
     graph.add_edge('"/agnocast_bridge_node_12345"', '"/viewer"',
             label='/bridge/camera_info')
-    _mark_bridge_nodes(graph)
+    mark_bridge_nodes(graph)
     assert graph.nodes['"/agnocast_bridge_node_12345"']['is_bridge_node'] is True
     assert graph.nodes['"/sensor"']['is_bridge_node'] is False
 
@@ -213,7 +182,7 @@ class TestBridgeDetection:
     graph = nx.MultiDiGraph()
     graph.add_edge('"/a"', '"/ns/agnocast_bridge_node_999"', label='/topic')
     graph.add_edge('"/ns/agnocast_bridge_node_999"', '"/b"', label='/out')
-    _mark_bridge_nodes(graph)
+    mark_bridge_nodes(graph)
     assert graph.nodes['"/ns/agnocast_bridge_node_999"']['is_bridge_node'] is True
 
 
@@ -227,23 +196,24 @@ class TestMarkAgnocastNodeTypes:
   def test_node_type_classification(self, tmp_path):
     """
     /node_a belongs to agnocast_only_* executor -> agnocast_node (③)
-    /node_b has_agnocast but not in agnocast_only executor -> rclcpp_with_agnocast (②)
-    /node_c has no agnocast -> rclcpp_only (①)
+    /node_b is in agnocast_* executor -> rclcpp_with_agnocast (②)
+    /node_c has no agnocast executor -> rclcpp_only (①)
     """
     graph = make_graph_with_topics([
       ('/node_a', '/node_b', '/topic_agnocast'),
       ('/node_c', '/node_b', '/normal_topic'),
     ])
-    _mark_agnocast_edges(graph)
-    _mark_agnocast_nodes(graph)
 
-    # Build architecture YAML linking /node_a to agnocast_only executor
     arch = {
       'executors': [
         {
           'executor_type': 'agnocast_only_single_threaded',
           'callback_group_names': ['/node_a/cbg_0'],
-        }
+        },
+        {
+          'executor_type': 'agnocast_single_threaded',
+          'callback_group_names': ['/node_b/cbg_0'],
+        },
       ],
       'nodes': [
         {
@@ -254,7 +224,9 @@ class TestMarkAgnocastNodeTypes:
         },
         {
           'node_name': '/node_b',
-          'callback_groups': [],
+          'callback_groups': [
+            {'callback_group_name': '/node_b/cbg_0'}
+          ],
         },
         {
           'node_name': '/node_c',
@@ -272,21 +244,19 @@ class TestMarkAgnocastNodeTypes:
     assert graph.nodes['"/node_c"']['agnocast_node_type'] == 'rclcpp_only'
 
   def test_empty_yaml(self, tmp_path):
-    """Empty YAML should classify all nodes as rclcpp_only or rclcpp_with_agnocast"""
+    """Empty YAML should classify all nodes as rclcpp_only"""
     graph = make_graph_with_topics([
       ('/node_a', '/node_b', '/topic_agnocast'),
     ])
-    _mark_agnocast_edges(graph)
-    _mark_agnocast_nodes(graph)
 
     yaml_file = str(tmp_path / 'architecture.yaml')
     write_yaml(yaml_file, {'nodes': [], 'executors': []})
 
     _mark_agnocast_node_types(graph, yaml_file)
 
-    # No agnocast_only executors -> no agnocast_node type
-    assert graph.nodes['"/node_a"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
-    assert graph.nodes['"/node_b"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
+    # No agnocast executors → all nodes are rclcpp_only
+    assert graph.nodes['"/node_a"']['agnocast_node_type'] == 'rclcpp_only'
+    assert graph.nodes['"/node_b"']['agnocast_node_type'] == 'rclcpp_only'
 
 
 # ===================================================================
@@ -302,17 +272,15 @@ class TestGracefulDegradation:
       ('/node_c', '/node_d', '/normal'),
     ])
     _mark_agnocast_edges(graph)
-    _mark_agnocast_nodes(graph)
-    _mark_bridge_nodes(graph)
-    _synthesize_bridge_direct_edges(graph)
+    mark_bridge_nodes(graph)
+    synthesize_bridge_direct_edges(graph)
 
     # Edges should have is_agnocast
     for e in graph.edges:
       assert 'is_agnocast' in graph.edges[e]
 
-    # Nodes should have has_agnocast but NOT agnocast_node_type
+    # Nodes should NOT have agnocast_node_type (set only by _mark_agnocast_node_types)
     for n in graph.nodes:
-      assert 'has_agnocast' in graph.nodes[n]
       assert 'agnocast_node_type' not in graph.nodes[n]
 
 
@@ -333,7 +301,7 @@ class TestExtendAgnocastIntegration:
     return yaml_file
 
   def test_full_pipeline_basic(self, tmp_path):
-    """Basic pipeline: agnocast edges and nodes are marked correctly"""
+    """Basic pipeline: agnocast edges marked, node types default to rclcpp_only when no executor YAML"""
     yaml_file = self._make_minimal_yaml(tmp_path)
 
     graph = make_graph_with_topics([
@@ -351,10 +319,10 @@ class TestExtendAgnocastIntegration:
       else:
         assert result.edges[e]['is_agnocast'] is False
 
-    # Verify node attributes
-    assert result.nodes['"/tracker"']['has_agnocast'] is True
-    assert result.nodes['"/planner"']['has_agnocast'] is True
-    assert result.nodes['"/sensor"']['has_agnocast'] is False
+    # No executor info in YAML → all nodes are rclcpp_only
+    assert result.nodes['"/tracker"']['agnocast_node_type'] == 'rclcpp_only'
+    assert result.nodes['"/planner"']['agnocast_node_type'] == 'rclcpp_only'
+    assert result.nodes['"/sensor"']['agnocast_node_type'] == 'rclcpp_only'
 
   def test_full_pipeline_with_agnocast_only_executor(self, tmp_path):
     """Pipeline with agnocast_only executor sets agnocast_node_type correctly"""
@@ -367,7 +335,7 @@ class TestExtendAgnocastIntegration:
         },
         {
           'node_name': '/planner',
-          'callback_groups': [],
+          'callback_groups': [{'callback_group_name': '/planner/cbg_0'}],
         },
         {
           'node_name': '/sensor',
@@ -378,7 +346,11 @@ class TestExtendAgnocastIntegration:
         {
           'executor_type': 'agnocast_only_single_threaded',
           'callback_group_names': ['/tracker/cbg_0'],
-        }
+        },
+        {
+          'executor_type': 'agnocast_single_threaded',
+          'callback_group_names': ['/planner/cbg_0'],
+        },
       ],
     )
 

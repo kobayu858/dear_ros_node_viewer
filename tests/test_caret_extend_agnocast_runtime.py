@@ -31,6 +31,10 @@ import networkx as nx
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from dear_ros_node_viewer import caret_extend_agnocast_runtime as runtime
+from dear_ros_node_viewer.agnocast_extend_utils import (
+  mark_bridge_nodes,
+  synthesize_bridge_direct_edges,
+)
 
 
 # ===========================================================================
@@ -212,51 +216,6 @@ class TestParseSingleTopicInfo(unittest.TestCase):
     self.assertEqual(len(endpoints.agnocast_subs), 0)
 
 
-class TestParseAllTopicInfoAgnocast(unittest.TestCase):
-  """Tests for _parse_all_topic_info_agnocast."""
-
-  def test_multiple_topics(self):
-    output = (
-      "--- /points ---\n"
-      "Type: sensor_msgs/msg/PointCloud2\n"
-      "\n"
-      "ROS 2 Publisher count: 0\n"
-      "Agnocast Publisher count: 1\n"
-      "\n"
-      "Node name: lidar\n"
-      "Node namespace: /sensing\n"
-      "Topic type: sensor_msgs/msg/PointCloud2\n"
-      "Endpoint type: PUBLISHER (Agnocast enabled)\n"
-      "\n"
-      "ROS 2 Subscription count: 0\n"
-      "Agnocast Subscription count: 0\n"
-      "\n"
-      "--- /image ---\n"
-      "Type: sensor_msgs/msg/Image\n"
-      "\n"
-      "ROS 2 Publisher count: 0\n"
-      "Agnocast Publisher count: 1\n"
-      "\n"
-      "Node name: camera\n"
-      "Node namespace: /sensing\n"
-      "Topic type: sensor_msgs/msg/Image\n"
-      "Endpoint type: PUBLISHER (Agnocast enabled)\n"
-      "\n"
-      "ROS 2 Subscription count: 0\n"
-      "Agnocast Subscription count: 0\n"
-    )
-    result = runtime._parse_all_topic_info_agnocast(output)
-    self.assertIn('/points', result)
-    self.assertIn('/image', result)
-    self.assertEqual(len(result), 2)
-    self.assertEqual(result['/points'].agnocast_pubs[0].node_name,
-             '/sensing/lidar')
-    self.assertEqual(result['/image'].agnocast_pubs[0].node_name,
-             '/sensing/camera')
-
-  def test_empty(self):
-    result = runtime._parse_all_topic_info_agnocast("")
-    self.assertEqual(result, {})
 
 
 # ===========================================================================
@@ -395,20 +354,6 @@ class TestMarkAgnocastNodes(unittest.TestCase):
     self.assertEqual(g.nodes['"/node_b"']['agnocast_node_type'], 'rclcpp_with_agnocast')
     self.assertEqual(g.nodes['"/node_c"']['agnocast_node_type'], 'rclcpp_only')
 
-  def test_has_agnocast_derived_from_edges(self):
-    g = _make_simple_graph()
-    for edge in g.edges:
-      g.edges[edge]['is_agnocast'] = False
-    # Make /topic_x agnocast
-    for src, dst, key in g.edges:
-      if g.edges[src, dst, key].get('label', '') == '/topic_x':
-        g.edges[src, dst, key]['is_agnocast'] = True
-
-    g = runtime._mark_agnocast_nodes(g, None)
-    self.assertTrue(g.nodes['"/node_a"']['has_agnocast'])
-    self.assertTrue(g.nodes['"/node_b"']['has_agnocast'])
-    self.assertFalse(g.nodes['"/node_c"']['has_agnocast'])
-
   def test_no_node_type_when_agnocast_only_is_none(self):
     g = _make_simple_graph()
     for edge in g.edges:
@@ -419,7 +364,7 @@ class TestMarkAgnocastNodes(unittest.TestCase):
 
 
 class TestProcessBridgeNodes(unittest.TestCase):
-  """Tests for _process_bridge_nodes."""
+  """Tests for mark_bridge_nodes + synthesize_bridge_direct_edges."""
 
   def test_bridge_detection_and_synthesis(self):
     g = nx.MultiDiGraph()
@@ -431,7 +376,8 @@ class TestProcessBridgeNodes(unittest.TestCase):
     g.add_edge('"/agnocast_bridge_node_999"', '"/planning/planner"',
            label='/points')
 
-    g = runtime._process_bridge_nodes(g)
+    mark_bridge_nodes(g)
+    synthesize_bridge_direct_edges(g, upgrade_existing_edges=True)
 
     # Bridge node marked
     self.assertTrue(g.nodes['"/agnocast_bridge_node_999"']['is_bridge_node'])
@@ -459,7 +405,8 @@ class TestProcessBridgeNodes(unittest.TestCase):
 
   def test_no_bridge_nodes(self):
     g = _make_simple_graph()
-    g = runtime._process_bridge_nodes(g)
+    mark_bridge_nodes(g)
+    synthesize_bridge_direct_edges(g, upgrade_existing_edges=True)
 
     for node_name in g.nodes:
       self.assertFalse(g.nodes[node_name].get('is_bridge_node', False))
@@ -473,7 +420,7 @@ class TestProcessBridgeNodes(unittest.TestCase):
     g.add_node('"/node_a"')
     g.add_edge('"/node_a"', '"/ns/agnocast_bridge_node_42"', label='/t')
 
-    g = runtime._process_bridge_nodes(g)
+    mark_bridge_nodes(g)
     self.assertTrue(g.nodes['"/ns/agnocast_bridge_node_42"']['is_bridge_node'])
 
 
@@ -605,7 +552,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
 
     # All defaults
     for node_name in g.nodes:
-      self.assertFalse(g.nodes[node_name]['has_agnocast'])
+      self.assertEqual(g.nodes[node_name]['agnocast_node_type'], 'rclcpp_only')
       self.assertFalse(g.nodes[node_name]['is_bridge_node'])
     for edge in g.edges:
       self.assertFalse(g.edges[edge]['is_agnocast'])
@@ -710,7 +657,7 @@ class TestHelpers(unittest.TestCase):
     g = _make_simple_graph()
     runtime._set_default_attributes(g)
     for node_name in g.nodes:
-      self.assertFalse(g.nodes[node_name]['has_agnocast'])
+      self.assertEqual(g.nodes[node_name]['agnocast_node_type'], 'rclcpp_only')
       self.assertFalse(g.nodes[node_name]['is_bridge_node'])
     for edge in g.edges:
       self.assertFalse(g.edges[edge]['is_agnocast'])
