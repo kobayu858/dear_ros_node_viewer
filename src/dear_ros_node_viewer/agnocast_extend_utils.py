@@ -40,6 +40,18 @@ def base_topic(label: str) -> str:
   return label.strip('"').removesuffix(AGNOCAST_TOPIC_SUFFIX)
 
 
+def extract_node_basename(node_name: str) -> str:
+  """Get the basename from a fully-qualified or quoted node name.
+  
+  Examples
+  --------
+  ``'"/ns/node"'`` → ``'node'``
+  ``'/ns/node'``   → ``'node'``
+  """
+  bare = node_name.strip('"')
+  return bare.rsplit('/', 1)[-1] if '/' in bare else bare
+
+
 def mark_bridge_nodes(graph: nx.MultiDiGraph) -> None:
   """Mark every node and edge with bridge-related flags.
 
@@ -51,8 +63,7 @@ def mark_bridge_nodes(graph: nx.MultiDiGraph) -> None:
     ``is_bridge_edge`` : bool — True when either endpoint is a bridge node.
   """
   for node_name in graph.nodes:
-    bare = node_name.strip('"')
-    basename = bare.rsplit('/', 1)[-1] if '/' in bare else bare
+    basename = extract_node_basename(node_name)
     graph.nodes[node_name]['is_bridge_node'] = basename.startswith(BRIDGE_NODE_PREFIX)
 
   for edge in graph.edges:

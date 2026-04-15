@@ -33,6 +33,7 @@ from .agnocast_extend_utils import (
   AGNOCAST_TOPIC_SUFFIX,
   mark_bridge_nodes,
   synthesize_bridge_direct_edges,
+  extract_node_basename,
 )
 
 logger = LoggerFactory.create(__name__)
@@ -160,14 +161,6 @@ def _parse_topic_list_agnocast(output: str) -> set[str]:
   return agnocast_topics
 
 
-def _extract_node_basename(full_name: str) -> str:
-  """Get the basename from a fully-qualified node name.
-
-  Example: ``"/ns/node"`` → ``"node"``
-  """
-  return full_name.rsplit('/', 1)[-1]
-
-
 def _parse_single_topic_info(block: str) -> TopicEndpoints:
   """Parse one topic block from ``ros2 topic info_agnocast -v`` output."""
   endpoints = TopicEndpoints()
@@ -193,7 +186,7 @@ def _parse_single_topic_info(block: str) -> TopicEndpoints:
     elif 'Agnocast enabled' in stripped and current_section:
       if last_namespace is not None and last_node_name is not None:
         full_name = last_namespace.rstrip('/') + '/' + last_node_name
-        is_bridge = _extract_node_basename(full_name).startswith(BRIDGE_NODE_PREFIX)
+        is_bridge = extract_node_basename(full_name).startswith(BRIDGE_NODE_PREFIX)
         info = EndpointInfo(node_name=full_name, is_bridge=is_bridge)
         if current_section == 'pub':
           endpoints.agnocast_pubs.append(info)
@@ -339,7 +332,7 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
 
   nodes_to_connect: list[tuple[str, set[str], set[str]]] = []
   for node_name in agnocast_only_nodes:
-    if _extract_node_basename(node_name).startswith(BRIDGE_NODE_PREFIX):
+    if extract_node_basename(node_name).startswith(BRIDGE_NODE_PREFIX):
       continue
 
     quoted_name = _quote_name(node_name)
@@ -526,7 +519,7 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   # --- Step 2: ros2 node info_agnocast × M (③ nodes only) ---
   node_topics: dict[str, tuple[set[str], set[str]]] = {}
   for node_name in agnocast_only_nodes:
-    basename = _extract_node_basename(node_name)
+    basename = extract_node_basename(node_name)
     if basename.startswith(BRIDGE_NODE_PREFIX):
       continue
     result = _fetch_node_info(node_name)
