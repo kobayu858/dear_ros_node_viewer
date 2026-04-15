@@ -31,6 +31,7 @@ from .logger_factory import LoggerFactory
 logger = LoggerFactory.create(__name__)
 
 BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
+AGNOCAST_TOPIC_SUFFIX = '_agnocast'
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +524,9 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
 # Graph modification: bridge nodes
 # ---------------------------------------------------------------------------
 
+def _base_topic(label: str) -> str:
+    return label.strip('"').removesuffix(AGNOCAST_TOPIC_SUFFIX)
+
 def _process_bridge_nodes(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   """Detect bridge nodes and synthesize direct edges.
 
@@ -566,9 +570,10 @@ def _process_bridge_nodes(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
     # Synthesize direct edges: upstream × downstream
     for src, label_src in upstream:
       for dst, label_dst in downstream:
+        if _base_topic(label_src) != _base_topic(label_dst):
+          continue
         edges_to_add.append({
-          'src': src,
-          'dst': dst,
+          'src': src, 'dst': dst,
           'label_src': label_src,
           'label_dst': label_dst,
         })
