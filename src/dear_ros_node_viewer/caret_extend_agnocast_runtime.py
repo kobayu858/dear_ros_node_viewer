@@ -199,36 +199,6 @@ def _parse_single_topic_info(block: str) -> TopicEndpoints:
   return endpoints
 
 
-def _parse_all_topic_info_agnocast(output: str) -> dict[str, TopicEndpoints]:
-  """Parse ``ros2 topic info_agnocast --all -v`` output.
-
-  Splits on ``--- /topic_name ---`` separators and delegates each block
-  to :func:`_parse_single_topic_info`.
-  """
-  result: dict[str, TopicEndpoints] = {}
-  current_topic: str | None = None
-  current_block_lines: list[str] = []
-
-  for line in output.splitlines():
-    stripped = line.strip()
-    if stripped.startswith('--- ') and stripped.endswith(' ---'):
-      # Flush previous block
-      if current_topic is not None and current_block_lines:
-        block = '\n'.join(current_block_lines)
-        result[current_topic] = _parse_single_topic_info(block)
-      current_topic = stripped[4:-4].strip()
-      current_block_lines = []
-    else:
-      current_block_lines.append(line)
-
-  # Flush last block
-  if current_topic is not None and current_block_lines:
-    block = '\n'.join(current_block_lines)
-    result[current_topic] = _parse_single_topic_info(block)
-
-  return result
-
-
 # ---------------------------------------------------------------------------
 # CLI fetchers
 # ---------------------------------------------------------------------------
@@ -483,12 +453,7 @@ def _mark_agnocast_edges(graph: nx.MultiDiGraph,
 def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
              agnocast_only_nodes: set[str] | None
              ) -> nx.MultiDiGraph:
-  """Set ``has_agnocast`` and ``agnocast_node_type`` on every node.
-
-  ``has_agnocast`` is derived from edges: True if the node has at
-  least one ``is_agnocast=True`` edge.
-
-  ``agnocast_node_type`` is set to:
+  """  ``agnocast_node_type`` is set to:
     - ``'agnocast_node'`` for ③ nodes
     - ``'rclcpp_with_agnocast'`` for ② nodes
     - ``'rclcpp_only'`` for ① nodes
@@ -623,8 +588,8 @@ def _process_bridge_nodes(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
 def _set_default_attributes(graph: nx.MultiDiGraph) -> None:
   """Set safe defaults when CLI is completely unavailable."""
   for node_name in graph.nodes:
-    graph.nodes[node_name]['has_agnocast'] = False
     graph.nodes[node_name]['is_bridge_node'] = False
+    graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'
   for edge in graph.edges:
     graph.edges[edge]['is_agnocast'] = False
     graph.edges[edge]['is_bridge_edge'] = False
@@ -643,7 +608,7 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
     3. ``ros2 topic info_agnocast --all -v`` — all endpoint information
     4. Add ③ nodes and their edges to the graph
     5. Mark ``is_agnocast`` on existing edges
-    6. Mark ``has_agnocast`` / ``agnocast_node_type`` on nodes
+    6. Mark ``agnocast_node_type`` on nodes
     7. Detect bridge nodes and synthesize direct edges
 
   On CLI failure, returns the graph with safe default attributes
