@@ -1,0 +1,147 @@
+# Copyright 2023 iwatake2222
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Shared utilities for Agnocast graph processing.
+
+Used by both caret_extend_agnocast.py (static/YAML input) and
+caret_extend_agnocast_runtime.py (dynamic/CLI input).
+"""
+
+from __future__ import annotations
+import networkx as nx
+from .logger_factory import LoggerFactory
+
+logger = LoggerFactory.create(__name__)
+
+BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
+AGNOCAST_TOPIC_SUFFIX = '_agnocast'
+
+
+def base_topic(label: str) -> str:
+  """Return the topic name with the Agnocast suffix stripped.
+
+  Examples
+  --------
+  ``'"/sensing/lidar_agnocast"'`` → ``'/sensing/lidar'``
+  ``'/chatter_agnocast'``         → ``'/chatter'``
+  ``'/chatter'``                  → ``'/chatter'``
+  """
+  return label.strip('"').removesuffix(AGNOCAST_TOPIC_SUFFIX)
+
+
+def mark_bridge_nodes(graph: nx.MultiDiGraph) -> None:
+  """Mark every node and edge with bridge-related flags.
+
+  Sets on each node:
+    ``is_bridge_node`` : bool — True when the node's basename matches
+    ``agnocast_bridge_node_*``.
+
+  Sets on each edge:
+    ``is_bridge_edge`` : bool — True when either endpoint is a bridge node.
+  """
+  for node_name in graph.nodes:
+    bare = node_name.strip('"')
+    basename = bare.rsplit('/', 1)[-1] if '/' in bare else bare
+    graph.nodes[node_name]['is_bridge_node'] = basename.startswith(BRIDGE_NODE_PREFIX)
+
+  for edge in graph.edges:
+    src_is_bridge = graph.nodes[edge[0]].get('is_bridge_node', False)
+    dst_is_bridge = graph.nodes[edge[1]].get('is_bridge_node', False)
+    graph.edges[edge]['is_bridge_edge'] = src_is_bridge or dst_is_bridge
+
+
+def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
+                    upgrade_existing_edges: bool = False) -> None:
+  """Synthesize direct edges that bypass bridge nodes.
+
+  For each bridge node, pairs of (upstream node, downstream node) whose
+  base topic names match are connected with a synthesized edge
+  (``is_bridged=True``, ``is_bridge_edge=False``).
+  These direct edges are shown when "Show Bridge" is OFF.
+
+  Must be called after ``mark_bridge_nodes()``.
+
+  Parameters
+  ----------
+  graph : nx.MultiDiGraph
+      Graph with ``is_bridge_node`` already set on all nodes.
+  upgrade_existing_edges : bool
+      When True, an edge that already exists with the same src/dst/label
+      is upgraded in-place with bridge attributes instead of adding a new
+      edge.  Set to True for the dynamic (runtime) path where Step 4 may
+      have already added ③ edges that overlap with the synthesized path.
+      Set to False (default) for the static (YAML) path where no such
+      prior edges exist.
+  """
+  bridge_nodes = [n for n in graph.nodes
+          if graph.nodes[n].get('is_bridge_node', False)]
+
+  edges_to_add: list[dict] = []
+  for bridge_node in bridge_nodes:
+    upstream: list[tuple[str, str]] = []   # (src_node, label)
+    downstream: list[tuple[str, str]] = []  # (dst_node, label)
+
+    for edge in graph.edges:
+      src, dst, _ = edge
+      if dst == bridge_node:
+        upstream.append((src, graph.edges[edge].get('label', '')))
+      elif src == bridge_node:
+        downstream.append((dst, graph.edges[edge].get('label', '')))
+
+    for src, label_src in upstream:
+      for dst, label_dst in downstream:
+        if base_topic(label_src) != base_topic(label_dst):
+          continue
+        edges_to_add.append({
+          'src': src, 'dst': dst,
+          'label_src': label_src,
+          'label_dst': label_dst,
+        })
+
+  for e in edges_to_add:
+    label_dst_bare = e['label_dst'].strip('"')
+
+    existing_key = None
+    if upgrade_existing_edges and graph.has_edge(e['src'], e['dst']):
+      for key in graph[e['src']][e['dst']]:
+        edge_label = graph[e['src']][e['dst']][key].get('label', '').strip('"')
+        if edge_label == label_dst_bare:
+          existing_key = key
+          break
+
+    if existing_key is not None:
+      # Upgrade existing edge to synthesized bridge edge
+      graph.edges[e['src'], e['dst'], existing_key].update({
+        'label_src': e['label_src'],
+        'label_dst': e['label_dst'],
+        'is_agnocast': True,
+        'is_bridged': True,
+        'is_bridge_edge': False,
+      })
+      logger.debug(
+        'Upgraded existing edge to bridged: %s -> %s (label=%s)',
+        e['src'], e['dst'], e['label_dst'])
+    else:
+      graph.add_edge(
+        e['src'], e['dst'],
+        label=e['label_dst'],
+        label_src=e['label_src'],
+        label_dst=e['label_dst'],
+        is_agnocast=True,
+        is_bridged=True,
+        is_bridge_edge=False,
+      )
+      logger.debug(
+        'Synthesized direct edge: %s -> %s (src=%s, dst=%s)',
+        e['src'], e['dst'], e['label_src'], e['label_dst'])

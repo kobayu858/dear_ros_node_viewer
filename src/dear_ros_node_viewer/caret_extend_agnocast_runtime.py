@@ -27,11 +27,14 @@ import subprocess
 from dataclasses import dataclass, field
 import networkx as nx
 from .logger_factory import LoggerFactory
+from .agnocast_extend_utils import (
+  BRIDGE_NODE_PREFIX,
+  AGNOCAST_TOPIC_SUFFIX,
+  mark_bridge_nodes,
+  synthesize_bridge_direct_edges,
+)
 
 logger = LoggerFactory.create(__name__)
-
-BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
-AGNOCAST_TOPIC_SUFFIX = '_agnocast'
 
 
 # ---------------------------------------------------------------------------
@@ -489,96 +492,6 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
 # Graph modification: bridge nodes
 # ---------------------------------------------------------------------------
 
-def _base_topic(label: str) -> str:
-    return label.strip('"').removesuffix(AGNOCAST_TOPIC_SUFFIX)
-
-def _process_bridge_nodes(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
-  """Detect bridge nodes and synthesize direct edges.
-
-  Bridge nodes are identified by the ``agnocast_bridge_node_`` name prefix.
-  For each bridge node, upstream and downstream edges are collected and
-  a synthesized direct edge (``is_bridged=True``) is added to allow
-  Show Bridge OFF display.
-
-  This is the same logic as Phase 1's ``caret_extend_agnocast.py``.
-  """
-  bridge_nodes: set[str] = set()
-  for node_name in graph.nodes:
-    bare = node_name.strip('"')
-    basename = bare.rsplit('/', 1)[-1] if '/' in bare else bare
-    if basename.startswith(BRIDGE_NODE_PREFIX):
-      graph.nodes[node_name]['is_bridge_node'] = True
-      bridge_nodes.add(node_name)
-    else:
-      graph.nodes[node_name].setdefault('is_bridge_node', False)
-
-  if not bridge_nodes:
-    for edge in graph.edges:
-      graph.edges[edge].setdefault('is_bridge_edge', False)
-    return graph
-
-  # Collect upstream/downstream per bridge node
-  edges_to_add: list[dict] = []
-  for bridge_node in bridge_nodes:
-    upstream: list[tuple[str, str]] = []   # (src_node, label)
-    downstream: list[tuple[str, str]] = []  # (dst_node, label)
-
-    for edge in graph.edges:
-      src, dst, _ = edge
-      if dst == bridge_node:
-        upstream.append((src, graph.edges[edge].get('label', '')))
-        graph.edges[edge]['is_bridge_edge'] = True
-      elif src == bridge_node:
-        downstream.append((dst, graph.edges[edge].get('label', '')))
-        graph.edges[edge]['is_bridge_edge'] = True
-
-    # Synthesize direct edges: upstream × downstream
-    for src, label_src in upstream:
-      for dst, label_dst in downstream:
-        if _base_topic(label_src) != _base_topic(label_dst):
-          continue
-        edges_to_add.append({
-          'src': src, 'dst': dst,
-          'label_src': label_src,
-          'label_dst': label_dst,
-        })
-
-  for e in edges_to_add:
-    # Check if an edge with the same src/dst/topic already exists (from Step 4)
-    existing_key = None
-    label_dst = e['label_dst'].strip('"')
-    if graph.has_edge(e['src'], e['dst']):
-      for key in graph[e['src']][e['dst']]:
-        edge_label = graph[e['src']][e['dst']][key].get('label', '').strip('"')
-        if edge_label == label_dst:
-          existing_key = key
-          break
-
-    if existing_key is not None:
-      # Upgrade existing edge to synthesized bridge edge
-      graph.edges[e['src'], e['dst'], existing_key].update({
-        'label_src': e['label_src'],
-        'label_dst': e['label_dst'],
-        'is_agnocast': True,
-        'is_bridged': True,
-        'is_bridge_edge': False,
-      })
-    else:
-      graph.add_edge(
-        e['src'], e['dst'],
-        label=e['label_dst'],
-        label_src=e['label_src'],
-        label_dst=e['label_dst'],
-        is_agnocast=True,
-        is_bridged=True,
-        is_bridge_edge=False,
-      )
-
-  # Default for edges not yet marked
-  for edge in graph.edges:
-    graph.edges[edge].setdefault('is_bridge_edge', False)
-
-  return graph
 
 
 # ---------------------------------------------------------------------------
@@ -661,8 +574,10 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   graph = _mark_agnocast_edges(graph, topic_endpoints)
 
   # --- Step 6: Bridge processing ---
-  # (must run before node marking so is_bridged info is available)
-  graph = _process_bridge_nodes(graph)
+  # mark_bridge_nodes must run before _mark_agnocast_nodes so is_bridged info is available.
+  # upgrade_existing_edges=True: Step 4 may have already added ③ edges on the same path.
+  mark_bridge_nodes(graph)
+  synthesize_bridge_direct_edges(graph, upgrade_existing_edges=True)
 
   # --- Step 7: Mark node attributes ---
   graph = _mark_agnocast_nodes(graph, agnocast_only_nodes)

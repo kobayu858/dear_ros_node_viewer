@@ -21,11 +21,15 @@ import networkx as nx
 import yaml
 from .caret2networkx import quote_name
 from .logger_factory import LoggerFactory
+from .agnocast_extend_utils import (
+  BRIDGE_NODE_PREFIX,
+  AGNOCAST_TOPIC_SUFFIX,
+  mark_bridge_nodes,
+  synthesize_bridge_direct_edges,
+)
 
 logger = LoggerFactory.create(__name__)
 
-AGNOCAST_TOPIC_SUFFIX = '_agnocast'
-BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
 AGNOCAST_EXECUTOR_PREFIX = 'agnocast_'
 AGNOCAST_ONLY_EXECUTOR_PREFIX = 'agnocast_only_'
 
@@ -78,71 +82,6 @@ def _mark_agnocast_node_types(graph: nx.MultiDiGraph, filename: str) -> None:
       graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'
 
 
-def _mark_bridge_nodes(graph: nx.MultiDiGraph) -> None:
-  """
-  Identify bridge nodes by name pattern and mark them.
-
-  Bridge nodes have names matching 'agnocast_bridge_node_*'.
-  Sets is_bridge_node = True/False on each node.
-  Sets is_bridge_edge = True on edges connected to bridge nodes, False otherwise.
-  """
-  for node_name in graph.nodes:
-    node_name_stripped = node_name.strip('"')
-    # Node name may have leading / or namespace like /ns/agnocast_bridge_node_123
-    # Extract the last component of the path for prefix matching
-    base_name = node_name_stripped.rsplit('/', 1)[-1]
-    is_bridge = base_name.startswith(BRIDGE_NODE_PREFIX)
-    graph.nodes[node_name]['is_bridge_node'] = is_bridge
-
-  for edge in graph.edges:
-    src_is_bridge = graph.nodes[edge[0]].get('is_bridge_node', False)
-    dst_is_bridge = graph.nodes[edge[1]].get('is_bridge_node', False)
-    graph.edges[edge]['is_bridge_edge'] = src_is_bridge or dst_is_bridge
-
-
-def _base_topic(label: str) -> str:
-  return label.strip('"').removesuffix(AGNOCAST_TOPIC_SUFFIX)
-
-
-def _synthesize_bridge_direct_edges(graph: nx.MultiDiGraph) -> None:
-  """
-  Synthesize direct edges that bypass bridge nodes.
-
-  For each bridge node, connect its upstream node(s) directly to its
-  downstream node(s) with is_agnocast=True, is_bridged=True.
-  Only pairs whose base topic name matches are synthesized.
-  These direct edges are used when Show Bridge is OFF.
-  """
-  bridge_nodes = [n for n in graph.nodes
-          if graph.nodes[n].get('is_bridge_node', False)]
-
-  for bridge_node in bridge_nodes:
-    upstream_edges = [(e, graph.edges[e]) for e in graph.edges
-             if e[1] == bridge_node]
-    downstream_edges = [(e, graph.edges[e]) for e in graph.edges
-              if e[0] == bridge_node]
-
-    for up_edge, up_data in upstream_edges:
-      upstream_node = up_edge[0]
-      label_src = up_data.get('label', '')
-      for down_edge, down_data in downstream_edges:
-        downstream_node = down_edge[1]
-        label_dst = down_data.get('label', '')
-        if _base_topic(label_src) != _base_topic(label_dst):
-          continue
-        graph.add_edge(
-          upstream_node, downstream_node,
-          label=label_src,
-          label_src=label_src,
-          label_dst=label_dst,
-          is_agnocast=True,
-          is_bridged=True,
-          is_bridge_edge=False,
-        )
-        logger.debug(
-          'Synthesized direct edge: %s -> %s (src=%s, dst=%s)',
-          upstream_node, downstream_node, label_src, label_dst)
-
 
 def extend_agnocast(filename: str,
           graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
@@ -174,10 +113,11 @@ def extend_agnocast(filename: str,
   _mark_agnocast_node_types(graph, filename)
 
   # Step 3: Mark bridge nodes and edges
-  _mark_bridge_nodes(graph)
+  mark_bridge_nodes(graph)
 
   # Step 4: Synthesize direct edges for bridge bypass
-  _synthesize_bridge_direct_edges(graph)
+  # upgrade_existing_edges=False: YAML-derived edges only, no prior ③ edges exist
+  synthesize_bridge_direct_edges(graph, upgrade_existing_edges=False)
 
   # Log summary
   agnocast_edge_count = sum(
