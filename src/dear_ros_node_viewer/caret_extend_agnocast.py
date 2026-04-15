@@ -26,6 +26,7 @@ logger = LoggerFactory.create(__name__)
 
 AGNOCAST_TOPIC_SUFFIX = '_agnocast'
 BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
+AGNOCAST_EXECUTOR_PREFIX = 'agnocast_'
 AGNOCAST_ONLY_EXECUTOR_PREFIX = 'agnocast_only_'
 
 
@@ -43,21 +44,38 @@ def _mark_agnocast_edges(graph: nx.MultiDiGraph) -> None:
     graph.edges[edge]['is_agnocast'] = is_agnocast
 
 
-def _mark_agnocast_nodes(graph: nx.MultiDiGraph) -> None:
-  """
-  Mark nodes that have at least one Agnocast edge.
+def _mark_agnocast_node_types(graph: nx.MultiDiGraph, filename: str) -> None:
+  with open(filename, encoding='UTF-8') as f:
+    arch = yaml.safe_load(f)
 
-  Sets has_agnocast = True on nodes connected to any is_agnocast edge,
-  False on all others.
-  """
-  agnocast_nodes: set[str] = set()
-  for edge in graph.edges:
-    if graph.edges[edge].get('is_agnocast', False):
-      agnocast_nodes.add(edge[0])
-      agnocast_nodes.add(edge[1])
+  agnocast_only_cbg_names: set[str] = set()
+  agnocast_cbg_names: set[str] = set()
+  for executor in arch.get('executors', []):
+    executor_type = executor.get('executor_type', '')
+    if executor_type.startswith(AGNOCAST_ONLY_EXECUTOR_PREFIX):
+      for cbg_name in executor.get('callback_group_names', []):
+        agnocast_only_cbg_names.add(cbg_name)
+    elif executor_type.startswith(AGNOCAST_EXECUTOR_PREFIX):
+      for cbg_name in executor.get('callback_group_names', []):
+        agnocast_cbg_names.add(cbg_name)
+
+  agnocast_only_nodes: set[str] = set()
+  agnocast_nodes: set[str] = set() 
+  for node in arch.get('nodes', []):
+    for cbg in node.get('callback_groups', []):
+      cbg_name = cbg.get('callback_group_name', '')
+      if cbg_name in agnocast_only_cbg_names:
+        agnocast_only_nodes.add(quote_name(node['node_name']))
+      elif cbg_name in agnocast_cbg_names:
+        agnocast_nodes.add(quote_name(node['node_name']))
 
   for node_name in graph.nodes:
-    graph.nodes[node_name]['has_agnocast'] = node_name in agnocast_nodes
+    if node_name in agnocast_only_nodes:
+      graph.nodes[node_name]['agnocast_node_type'] = 'agnocast_node'
+    elif node_name in agnocast_nodes:
+      graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_with_agnocast'
+    else:
+      graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'
 
 
 def _mark_bridge_nodes(graph: nx.MultiDiGraph) -> None:
@@ -124,46 +142,6 @@ def _synthesize_bridge_direct_edges(graph: nx.MultiDiGraph) -> None:
           'Synthesized direct edge: %s -> %s (src=%s, dst=%s)',
           upstream_node, downstream_node, label_src, label_dst)
 
-
-def _mark_agnocast_node_types(graph: nx.MultiDiGraph, filename: str) -> None:
-  """
-  Set agnocast_node_type based on executor_type in architecture YAML.
-
-  Traces: executor (executor_type) -> callback_group_names -> node
-  Executor types prefixed with 'agnocast_only_' identify agnocast::Node (③).
-
-  Types:
-    'agnocast_node'        — belongs to agnocast_only_* executor (③)
-    'rclcpp_with_agnocast' — not agnocast_only but has_agnocast is True (②)
-    'rclcpp_only'          — has_agnocast is False (①)
-  """
-  with open(filename, encoding='UTF-8') as f:
-    arch = yaml.safe_load(f)
-
-  # Collect callback_group_names belonging to agnocast_only_* executors
-  agnocast_only_cbg_names: set[str] = set()
-  for executor in arch.get('executors', []):
-    executor_type = executor.get('executor_type', '')
-    if executor_type.startswith(AGNOCAST_ONLY_EXECUTOR_PREFIX):
-      for cbg_name in executor.get('callback_group_names', []):
-        agnocast_only_cbg_names.add(cbg_name)
-
-  # Map callback_group_name -> node_name to find agnocast_only nodes
-  agnocast_only_nodes: set[str] = set()
-  for node in arch.get('nodes', []):
-    for cbg in node.get('callback_groups', []):
-      if cbg.get('callback_group_name', '') in agnocast_only_cbg_names:
-        agnocast_only_nodes.add(quote_name(node['node_name']))
-
-  for node_name in graph.nodes:
-    if node_name in agnocast_only_nodes:
-      graph.nodes[node_name]['agnocast_node_type'] = 'agnocast_node'
-    elif graph.nodes[node_name].get('has_agnocast', False):
-      graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_with_agnocast'
-    else:
-      graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'
-
-
 def extend_agnocast(filename: str,
           graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   """
@@ -171,10 +149,9 @@ def extend_agnocast(filename: str,
 
   Processing steps:
     1. Mark edges with is_agnocast based on '_agnocast' topic suffix
-    2. Mark nodes with has_agnocast based on connected edges
+    2. Set agnocast_node_type from executor_type in architecture YAML
     3. Identify bridge nodes by name pattern
     4. Synthesize direct edges for bridge bypass (Show Bridge OFF)
-    5. Set agnocast_node_type from executor_type in architecture YAML
 
   Parameters
   ----------
@@ -191,8 +168,8 @@ def extend_agnocast(filename: str,
   # Step 1: Mark edges
   _mark_agnocast_edges(graph)
 
-  # Step 2: Mark nodes
-  _mark_agnocast_nodes(graph)
+  # Step 2: Set node types from executor_type in YAML
+  _mark_agnocast_node_types(graph, filename)
 
   # Step 3: Mark bridge nodes and edges
   _mark_bridge_nodes(graph)
@@ -200,14 +177,12 @@ def extend_agnocast(filename: str,
   # Step 4: Synthesize direct edges for bridge bypass
   _synthesize_bridge_direct_edges(graph)
 
-  # Step 5: Set node types from executor_type in YAML
-  _mark_agnocast_node_types(graph, filename)
-
   # Log summary
   agnocast_edge_count = sum(
     1 for e in graph.edges if graph.edges[e].get('is_agnocast', False))
   agnocast_node_count = sum(
-    1 for n in graph.nodes if graph.nodes[n].get('has_agnocast', False))
+      1 for n in graph.nodes
+      if graph.nodes[n].get('agnocast_node_type', '') in ('rclcpp_with_agnocast', 'agnocast_node'))
   bridge_node_count = sum(
     1 for n in graph.nodes if graph.nodes[n].get('is_bridge_node', False))
   bridged_edge_count = sum(

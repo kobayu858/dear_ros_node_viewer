@@ -293,7 +293,6 @@ class GraphViewModel:
       edgename = nodeedge_name.split('###')[-1]
       display_edgename = edgename.replace('_agnocast', '')
       dpg.set_value(text_id, value=self.omit_name(display_edgename, omit_type))
-      #dpg.set_value(text_id, value=self.omit_name(edgename, omit_type))
 
   def omit_name(self, name: str, omit_type: OmitType) -> str:
     """ replace an original name to a name to be displayed """
@@ -457,6 +456,7 @@ class GraphViewModel:
       2. Show Node Diff ON + ③ node → teal
       3. Show Node Diff ON + ② node → cyan
       4. Show Agnocast ON + has_agnocast → cyan
+      5. Show Agnocast ON + ②③ node → cyan
       5. Default → gray
     """
     graph = self.get_graph()
@@ -474,6 +474,9 @@ class GraphViewModel:
 
     if self.agnocast_display['show_agnocast']:
       if node_data.get('has_agnocast', False):
+        return self.color_agnocast_node
+      node_type = node_data.get('agnocast_node_type', '')
+      if node_type in ('rclcpp_with_agnocast', 'agnocast_node'):
         return self.color_agnocast_node
 
     return self.color_highlight_def
