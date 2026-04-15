@@ -100,35 +100,36 @@ def _mark_bridge_nodes(graph: nx.MultiDiGraph) -> None:
     graph.edges[edge]['is_bridge_edge'] = src_is_bridge or dst_is_bridge
 
 
+def _base_topic(label: str) -> str:
+  return label.strip('"').removesuffix(AGNOCAST_TOPIC_SUFFIX)
+
+
 def _synthesize_bridge_direct_edges(graph: nx.MultiDiGraph) -> None:
   """
   Synthesize direct edges that bypass bridge nodes.
 
   For each bridge node, connect its upstream node(s) directly to its
   downstream node(s) with is_agnocast=True, is_bridged=True.
+  Only pairs whose base topic name matches are synthesized.
   These direct edges are used when Show Bridge is OFF.
   """
   bridge_nodes = [n for n in graph.nodes
           if graph.nodes[n].get('is_bridge_node', False)]
 
   for bridge_node in bridge_nodes:
-    # Collect upstream nodes (nodes that publish to this bridge)
     upstream_edges = [(e, graph.edges[e]) for e in graph.edges
              if e[1] == bridge_node]
-    # Collect downstream nodes (nodes that this bridge publishes to)
     downstream_edges = [(e, graph.edges[e]) for e in graph.edges
               if e[0] == bridge_node]
 
     for up_edge, up_data in upstream_edges:
       upstream_node = up_edge[0]
+      label_src = up_data.get('label', '')
       for down_edge, down_data in downstream_edges:
         downstream_node = down_edge[1]
-        label_src = up_data.get('label', '')
         label_dst = down_data.get('label', '')
-        # Use upstream label as the canonical label (for edge display text),
-        # but store both so add_link_in_dpg can find the correct attribute
-        # slot on each side (publisher has _agnocast topic, subscriber has
-        # the original topic name).
+        if _base_topic(label_src) != _base_topic(label_dst):
+          continue
         graph.add_edge(
           upstream_node, downstream_node,
           label=label_src,
@@ -141,6 +142,7 @@ def _synthesize_bridge_direct_edges(graph: nx.MultiDiGraph) -> None:
         logger.debug(
           'Synthesized direct edge: %s -> %s (src=%s, dst=%s)',
           upstream_node, downstream_node, label_src, label_dst)
+
 
 def extend_agnocast(filename: str,
           graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
