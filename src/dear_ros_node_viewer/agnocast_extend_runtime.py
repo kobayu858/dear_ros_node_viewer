@@ -24,6 +24,7 @@ require zero changes.
 
 from __future__ import annotations
 import subprocess
+from collections import defaultdict
 from dataclasses import dataclass, field
 import networkx as nx
 from .logger_factory import LoggerFactory
@@ -270,27 +271,21 @@ def _edge_exists(graph: nx.MultiDiGraph,
 # ---------------------------------------------------------------------------
 
 def _build_topic_node_maps(graph: nx.MultiDiGraph
-               ) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
-  """Build topic→publisher and topic→subscriber maps from existing edges.
+                           ) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+  """Build topic→publisher and topic→subscriber maps from existing edges."""
 
-  Returns
-  -------
-  topic_to_publishers : dict[str, set[str]]
-      ``{topic_name: {quoted_node_name, ...}}``
-  topic_to_subscribers : dict[str, set[str]]
-      ``{topic_name: {quoted_node_name, ...}}``
-  """
-  topic_to_publishers: dict[str, set[str]] = {}
-  topic_to_subscribers: dict[str, set[str]] = {}
+  topic_to_publishers = defaultdict(set)
+  topic_to_subscribers = defaultdict(set)
 
   for src, dst, key in graph.edges:
     label = graph.edges[src, dst, key].get('label', '').strip('"')
     if not label:
       continue
-    topic_to_publishers.setdefault(label, set()).add(src)
-    topic_to_subscribers.setdefault(label, set()).add(dst)
+      
+    topic_to_publishers[label].add(src)
+    topic_to_subscribers[label].add(dst)
 
-  return topic_to_publishers, topic_to_subscribers
+  return dict(topic_to_publishers), dict(topic_to_subscribers)
 
 
 def _add_edges_for_node(graph: nx.MultiDiGraph,
@@ -322,49 +317,32 @@ def _add_edges_for_node(graph: nx.MultiDiGraph,
 
 
 def _add_agnocast_nodes(graph: nx.MultiDiGraph,
-            agnocast_only_nodes: set[str],
-            node_topics: dict[str, tuple[set[str], set[str]]],
-            topic_endpoints: dict[str, TopicEndpoints] | None = None
-            ) -> nx.MultiDiGraph:
-  """Add type-③ nodes (agnocast::Node) and their edges to the graph.
+                        agnocast_only_nodes: set[str],
+                        node_topics: dict[str, tuple[set[str], set[str]]],
+                        topic_endpoints: dict[str, TopicEndpoints] | None = None
+                        ) -> nx.MultiDiGraph:
+  """Add type-③ nodes (agnocast::Node) and their edges to the graph."""
+  
+  t_pub, t_sub = _build_topic_node_maps(graph)
+  
+  topic_to_publishers = defaultdict(set, t_pub)
+  topic_to_subscribers = defaultdict(set, t_sub)
 
-  Parameters
-  ----------
-  graph : nx.MultiDiGraph
-      Existing graph built from dot2networkx.
-  agnocast_only_nodes : set[str]
-      Fully-qualified names of ③ nodes from ``ros2 node list_agnocast``.
-  node_topics : dict
-      ``{node_name: (pub_topics, sub_topics)}`` from ``ros2 node info_agnocast``.
-  topic_endpoints : dict, optional
-      Per-topic endpoint info from ``ros2 topic info_agnocast -v``.
-      Used to register ② nodes' Agnocast pub/sub into the maps.
-  """
-  # Build maps from existing edges (dot2networkx graph)
-  topic_to_publishers, topic_to_subscribers = _build_topic_node_maps(graph)
-
-  # Register Agnocast endpoints from CLI (not in .dot)
-  # Includes ② nodes' Agnocast pub/sub AND bridge nodes' endpoints.
-  # Bridge nodes must be in the maps so ③→bridge edges are created,
-  # which _process_bridge_nodes needs to find upstream/downstream.
   if topic_endpoints is not None:
     for topic, endpoints in topic_endpoints.items():
       for ep in endpoints.agnocast_pubs:
         quoted = _quote_name(ep.node_name)
-        topic_to_publishers.setdefault(topic, set()).add(quoted)
+        topic_to_publishers[topic].add(quoted)
       for ep in endpoints.agnocast_subs:
         quoted = _quote_name(ep.node_name)
-        topic_to_subscribers.setdefault(topic, set()).add(quoted)
+        topic_to_subscribers[topic].add(quoted)
 
-  # Phase 1: Add all ③ nodes and register their topics into the maps
   nodes_to_connect: list[tuple[str, set[str], set[str]]] = []
   for node_name in agnocast_only_nodes:
     if _extract_node_basename(node_name).startswith(BRIDGE_NODE_PREFIX):
       continue
 
     quoted_name = _quote_name(node_name)
-
-    # Skip if already present (could be a ② node visible in .dot)
     if quoted_name in graph.nodes:
       continue
 
@@ -373,18 +351,16 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
 
     if node_name in node_topics:
       pub_topics, sub_topics = node_topics[node_name]
-      # Register into maps so other ③ nodes can find this node
       for topic in pub_topics:
-        topic_to_publishers.setdefault(topic, set()).add(quoted_name)
+        topic_to_publishers[topic].add(quoted_name)
       for topic in sub_topics:
-        topic_to_subscribers.setdefault(topic, set()).add(quoted_name)
+        topic_to_subscribers[topic].add(quoted_name)
       nodes_to_connect.append((quoted_name, pub_topics, sub_topics))
 
-  # Phase 2: Add edges (now all ③ nodes are in the maps)
   for quoted_name, pub_topics, sub_topics in nodes_to_connect:
     _add_edges_for_node(graph, quoted_name,
-              pub_topics, sub_topics,
-              topic_to_publishers, topic_to_subscribers)
+                        pub_topics, sub_topics,
+                        dict(topic_to_publishers), dict(topic_to_subscribers))
 
   return graph
 

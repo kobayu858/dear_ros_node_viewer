@@ -19,6 +19,10 @@ Adds is_agnocast/has_agnocast properties and bridge node handling.
 from __future__ import annotations
 import networkx as nx
 import yaml
+try:
+  from yaml import CSafeLoader as SafeLoader
+except ImportError:
+  from yaml import SafeLoader
 from .caret2networkx import quote_name
 from .logger_factory import LoggerFactory
 from .agnocast_extend_utils import (
@@ -50,7 +54,7 @@ def _mark_agnocast_edges(graph: nx.MultiDiGraph) -> None:
 
 def _mark_agnocast_node_types(graph: nx.MultiDiGraph, filename: str) -> None:
   with open(filename, encoding='UTF-8') as f:
-    arch = yaml.safe_load(f)
+    arch = yaml.load(f, Loader=SafeLoader)
 
   agnocast_only_cbg_names: set[str] = set()
   agnocast_cbg_names: set[str] = set()
