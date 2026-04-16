@@ -105,46 +105,6 @@ def _parse_node_list_agnocast(output: str) -> tuple[set[str], set[str]]:
   return agnocast_only_nodes, all_nodes
 
 
-def _parse_node_info_agnocast(output: str) -> tuple[set[str], set[str]]:
-  """Parse ``ros2 node info_agnocast <node>`` output.
-
-  Returns
-  -------
-  pub_topics : set[str]
-      Topics this node publishes via Agnocast.
-  sub_topics : set[str]
-      Topics this node subscribes via Agnocast.
-  """
-  pub_topics: set[str] = set()
-  sub_topics: set[str] = set()
-  current_section: str | None = None
-
-  for line in output.strip().splitlines():
-    stripped = line.strip()
-
-    # Detect section headers
-    if stripped.startswith('Publishers:') or stripped.startswith('Agnocast Publishers:'):
-      current_section = 'pub'
-      continue
-    if stripped.startswith('Subscribers:') or stripped.startswith('Agnocast Subscribers:'):
-      current_section = 'sub'
-      continue
-    if stripped.startswith('Service Servers:') or stripped.startswith('Service Clients:') \
-        or stripped.startswith('Action Servers:') or stripped.startswith('Action Clients:'):
-      current_section = None
-      continue
-
-    # Collect Agnocast topic names (lines starting with '/' and tagged)
-    if current_section and stripped.startswith('/') and '(Agnocast' in stripped:
-      topic = stripped.split(':')[0].strip()
-      if current_section == 'pub':
-        pub_topics.add(topic)
-      else:
-        sub_topics.add(topic)
-
-  return pub_topics, sub_topics
-
-
 def _parse_topic_list_agnocast(output: str) -> set[str]:
   """Parse ``ros2 topic list_agnocast`` output.
 
@@ -206,14 +166,6 @@ def _fetch_node_list() -> tuple[set[str], set[str]] | None:
   if output is None:
     return None
   return _parse_node_list_agnocast(output)
-
-
-def _fetch_node_info(node_name: str) -> tuple[set[str], set[str]] | None:
-  """Execute ``ros2 node info_agnocast <node>`` and return parsed result."""
-  output = _run_agnocast_command(['ros2', 'node', 'info_agnocast', node_name])
-  if output is None:
-    return None
-  return _parse_node_info_agnocast(output)
 
 
 def _fetch_all_topic_info() -> dict[str, TopicEndpoints] | None:
@@ -498,13 +450,14 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   """Extend graph with Agnocast attributes from runtime CLI.
 
   Processing order:
-    1. ``ros2 node list_agnocast``  — identify ③ nodes
-    2. ``ros2 node info_agnocast``  — get ③ nodes' pub/sub topics  (×M)
-    3. ``ros2 topic info_agnocast --all -v`` — all endpoint information
+    1. ``ros2 node list_agnocast``            — identify ③ nodes
+    2. ``ros2 topic list_agnocast`` +
+       ``ros2 topic info_agnocast -v -d`` (×N) — all endpoint information
+    3. Build node→topics map by reverse lookup of ``topic_endpoints`` (in-memory)
     4. Add ③ nodes and their edges to the graph
     5. Mark ``is_agnocast`` on existing edges
-    6. Mark ``agnocast_node_type`` on nodes
-    7. Detect bridge nodes and synthesize direct edges
+    6. Detect bridge nodes and synthesize direct edges
+    7. Mark ``agnocast_node_type`` on nodes
 
   On CLI failure, returns the graph with safe default attributes
   (graceful degradation).
@@ -537,23 +490,33 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   agnocast_only_nodes, _all_nodes = node_list_result
   logger.info('Agnocast-only (③) nodes: %d', len(agnocast_only_nodes))
 
-  # --- Step 2: ros2 node info_agnocast × M (③ nodes only) ---
-  node_topics: dict[str, tuple[set[str], set[str]]] = {}
-  for node_name in agnocast_only_nodes:
-    basename = extract_node_basename(node_name)
-    if basename.startswith(BRIDGE_NODE_PREFIX):
-      continue
-    result = _fetch_node_info(node_name)
-    if result is not None:
-      node_topics[node_name] = result
-      logger.debug('③ node info: %s  pub=%s sub=%s',
-             node_name, result[0], result[1])
-
-  # --- Step 3: ros2 topic info_agnocast --all -v ---
+  # --- Step 2: ros2 topic info_agnocast -v -d (per topic) ---
   topic_endpoints = _fetch_all_topic_info()
   if topic_endpoints is not None:
     logger.info('Topic endpoint info retrieved for %d topics',
           len(topic_endpoints))
+
+  # --- Step 3: Build node_topics by reverse-lookup from topic_endpoints ---
+  # Reverse the topic→endpoints map into a node→(pub_topics, sub_topics) map.
+  # This replaces ``ros2 node info_agnocast`` × M queries with in-memory work.
+  # Only ③ nodes that are not bridge nodes are included, matching the
+  # filtering previously done in the per-node loop.
+  node_topics: dict[str, tuple[set[str], set[str]]] = defaultdict(
+      lambda: (set(), set()))
+
+  if topic_endpoints is not None:
+    for topic, endpoints in topic_endpoints.items():
+      for ep in endpoints.agnocast_pubs:
+        if ep.node_name in agnocast_only_nodes and not ep.is_bridge:
+          node_topics[ep.node_name][0].add(topic)
+      for ep in endpoints.agnocast_subs:
+        if ep.node_name in agnocast_only_nodes and not ep.is_bridge:
+          node_topics[ep.node_name][1].add(topic)
+
+  # Convert to a regular dict so downstream code sees the same type as before.
+  node_topics = dict(node_topics)
+  logger.debug('Built node_topics for %d ③ nodes via reverse lookup',
+               len(node_topics))
 
   # --- Step 4: Add ③ nodes ---
   graph = _add_agnocast_nodes(graph, agnocast_only_nodes, node_topics,
