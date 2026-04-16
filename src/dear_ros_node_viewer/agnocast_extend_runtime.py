@@ -39,10 +39,6 @@ from .agnocast_extend_utils import (
 logger = LoggerFactory.create(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
-
 @dataclass
 class EndpointInfo:
   """A single Agnocast endpoint returned by CLI."""
@@ -56,10 +52,6 @@ class TopicEndpoints:
   agnocast_pubs: list[EndpointInfo] = field(default_factory=list)
   agnocast_subs: list[EndpointInfo] = field(default_factory=list)
 
-
-# ---------------------------------------------------------------------------
-# CLI helpers
-# ---------------------------------------------------------------------------
 
 def _run_agnocast_command(cmd: list[str], timeout: int = 15) -> str | None:
   """Run an Agnocast CLI command and return stdout, or None on failure."""
@@ -77,10 +69,6 @@ def _run_agnocast_command(cmd: list[str], timeout: int = 15) -> str | None:
     logger.warning('Agnocast command timed out (%ds): %s', timeout, ' '.join(cmd))
     return None
 
-
-# ---------------------------------------------------------------------------
-# Parsers
-# ---------------------------------------------------------------------------
 
 def _parse_node_list_agnocast(output: str) -> set[str]:
   """Parse ``ros2 node list_agnocast`` output.
@@ -152,10 +140,6 @@ def _parse_single_topic_info(block: str) -> TopicEndpoints:
   return endpoints
 
 
-# ---------------------------------------------------------------------------
-# CLI fetchers
-# ---------------------------------------------------------------------------
-
 def _fetch_node_list() -> set[str] | None:
   """Execute ``ros2 node list_agnocast`` and return parsed result."""
   output = _run_agnocast_command(['ros2', 'node', 'list_agnocast'])
@@ -185,10 +169,6 @@ def _fetch_all_topic_info() -> dict[str, TopicEndpoints] | None:
   return all_info if all_info else None
 
 
-# ---------------------------------------------------------------------------
-# Node name helpers
-# ---------------------------------------------------------------------------
-
 def _quote_name(name: str) -> str:
   """Convert a CLI node name to the dot2networkx quoted format.
 
@@ -207,9 +187,6 @@ def _edge_exists(graph: nx.MultiDiGraph,
     
   return any(data.get('label', '').strip('"') == topic for data in edge_data.values())
 
-# ---------------------------------------------------------------------------
-# Graph modification: add ③ nodes
-# ---------------------------------------------------------------------------
 
 def _build_topic_node_maps(graph: nx.MultiDiGraph
                            ) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
@@ -262,7 +239,6 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
                         node_topics: dict[str, tuple[set[str], set[str]]],
                         topic_endpoints: dict[str, TopicEndpoints] | None = None
                         ) -> nx.MultiDiGraph:
-  """Add type-③ nodes (agnocast::Node) and their edges to the graph."""
   
   t_pub, t_sub = _build_topic_node_maps(graph)
   
@@ -305,10 +281,6 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
 
   return graph
 
-
-# ---------------------------------------------------------------------------
-# Graph modification: mark existing edges
-# ---------------------------------------------------------------------------
 
 def _mark_agnocast_edges(graph: nx.MultiDiGraph,
              topic_endpoints: dict[str, TopicEndpoints] | None
@@ -365,10 +337,6 @@ def _mark_agnocast_edges(graph: nx.MultiDiGraph,
   return graph
 
 
-# ---------------------------------------------------------------------------
-# Graph modification: mark node attributes
-# ---------------------------------------------------------------------------
-
 def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
              agnocast_only_nodes: set[str] | None
              ) -> nx.MultiDiGraph:
@@ -404,10 +372,6 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
   return graph
 
 
-# ---------------------------------------------------------------------------
-# Dot snapshot detection
-# ---------------------------------------------------------------------------
-
 def _has_agnocast_attributes(graph: nx.MultiDiGraph) -> bool:
   """Return True if the graph already has Agnocast attributes from a saved dot.
 
@@ -417,10 +381,6 @@ def _has_agnocast_attributes(graph: nx.MultiDiGraph) -> bool:
   """
   return any('agnocast_node_type' in graph.nodes[n] for n in graph.nodes)
 
-
-# ---------------------------------------------------------------------------
-# Default attributes (CLI failure fallback)
-# ---------------------------------------------------------------------------
 
 def _set_default_attributes(graph: nx.MultiDiGraph) -> None:
   """Set safe defaults when CLI is completely unavailable."""
@@ -463,7 +423,6 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
       Same graph with Agnocast attributes added.
   """
 
-  # --- Snapshot check: skip CLI if dot already has Agnocast attributes ---
   if _has_agnocast_attributes(graph):
     logger.info('Agnocast attributes found in dot. Skipping CLI queries.')
     mark_bridge_nodes(graph)
@@ -471,7 +430,6 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
     graph.graph['is_agnocast_environment'] = True
     return graph
 
-  # --- Step 1: ros2 node list_agnocast ---
   node_list_result = _fetch_node_list()
   if node_list_result is None:
     logger.info('Agnocast node list unavailable. Agnocast features disabled.')
@@ -484,13 +442,12 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   agnocast_only_nodes = node_list_result
   logger.info('Agnocast-only (③) nodes: %d', len(agnocast_only_nodes))
 
-  # --- Step 2: ros2 topic info_agnocast -v -d (per topic) ---
+
   topic_endpoints = _fetch_all_topic_info()
   if topic_endpoints is not None:
     logger.info('Topic endpoint info retrieved for %d topics',
           len(topic_endpoints))
 
-  # --- Step 3: Build node_topics by reverse-lookup from topic_endpoints ---
   # Reverse the topic→endpoints map into a node→(pub_topics, sub_topics) map.
   # This replaces ``ros2 node info_agnocast`` × M queries with in-memory work.
   # Only ③ nodes that are not bridge nodes are included, matching the
@@ -512,20 +469,16 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   logger.debug('Built node_topics for %d ③ nodes via reverse lookup',
                len(node_topics))
 
-  # --- Step 4: Add ③ nodes ---
   graph = _add_agnocast_nodes(graph, agnocast_only_nodes, node_topics,
                 topic_endpoints)
 
-  # --- Step 5: Mark is_agnocast on edges ---
   graph = _mark_agnocast_edges(graph, topic_endpoints)
 
-  # --- Step 6: Bridge processing ---
   # mark_bridge_nodes must run before _mark_agnocast_nodes so is_bridged info is available.
   # upgrade_existing_edges=True: Step 4 may have already added ③ edges on the same path.
   mark_bridge_nodes(graph)
   synthesize_bridge_direct_edges(graph, upgrade_existing_edges=True)
 
-  # --- Step 7: Mark node attributes ---
   graph = _mark_agnocast_nodes(graph, agnocast_only_nodes)
 
   return graph

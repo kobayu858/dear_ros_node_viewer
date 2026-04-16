@@ -27,7 +27,7 @@ logger = LoggerFactory.create(__name__)
 BRIDGE_NODE_PREFIX = 'agnocast_bridge_node_'
 AGNOCAST_TOPIC_SUFFIX = '_agnocast'
 
-# --- Agnocast attribute names (single source of truth) --------------------
+# Agnocast attribute names.
 # Used by dot2networkx (read) and graph_manager/save_agnocast_dot (write).
 AGNOCAST_NODE_ATTRS = ('agnocast_node_type', 'is_bridge_node')
 AGNOCAST_EDGE_ATTRS = ('is_agnocast', 'is_bridge_edge', 'is_bridged',
@@ -144,7 +144,6 @@ def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
 
     existing_key = None
     if upgrade_existing_edges and graph.has_edge(e['src'], e['dst']):
-      # 指定した src -> dst のエッジデータのみを取得
       edge_data = graph.get_edge_data(e['src'], e['dst'])
       if edge_data:
         for key, data in edge_data.items():

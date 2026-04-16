@@ -165,15 +165,12 @@ class GraphView:
     """ Add nodes and attributes """
     graph = self.graph_viewmodel.get_graph()
     for node_name in graph.nodes:
-      # Calculate position in window
       pos = graph.nodes[node_name]['pos']
       pos = [
         pos[0] * self.graph_viewmodel.graph_size[0],
         pos[1] * self.graph_viewmodel.graph_size[1]]
 
-      # Allocate node
       with dpg.node(label=node_name, pos=pos) as node_id:
-        # Save node id
         self.graph_viewmodel.add_dpg_node_id(node_name, node_id)
 
         # Set color
@@ -199,19 +196,15 @@ class GraphView:
               dpg.mvNodeCol_NodeBackground,
               initial_bg,
               category=dpg.mvThemeCat_Nodes)
-            # Set color value
             self.graph_viewmodel.add_dpg_node_color(node_name, theme_color)
             dpg.bind_item_theme(node_id, theme_id)
 
-        # Set callback
         with dpg.item_handler_registry() as node_select_handler:
           dpg.add_item_clicked_handler(callback=self._cb_node_clicked)
           dpg.bind_item_handler_registry(node_id, node_select_handler)
 
-        # Add text for node I/O (topics) and callback groups
         self.add_node_attr_in_dpg(node_name, display_cb_detail)
 
-        # Register and hide bridge nodes by default
         if is_bridge:
           self.graph_viewmodel.add_dpg_bridge_node_id(node_name, node_id)
           dpg.hide_item(node_id)
@@ -252,7 +245,6 @@ class GraphView:
       with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output):
         dpg.add_text('')
 
-    # Add callback group info
     self.add_node_callbackgroup_in_dpg(node_name, display_cb_detail)
     self.graph_viewmodel.display_callbackgroup(False)
 

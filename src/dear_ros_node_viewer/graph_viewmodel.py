@@ -177,7 +177,6 @@ class GraphViewModel:
       subscribing_edge_publishing_node_name_list = \
         [e[0] for e in graph.edges if e[1] == node_name]
       if self.node_selected_dict[node_name]:
-        # Disable highlight for all the other nodes#
         self.node_selected_dict[node_name] = False
         dpg.set_value(
           self.dpg_bind['node_color'][node_name],
@@ -354,7 +353,6 @@ class GraphViewModel:
 
   def high_light_caret_path(self, path_name):
     """ High light the selected CARET path """
-    # Disable high light for all nodes (restore to correct state)
     graph = self.get_graph()
     for node_name in graph.nodes:
       dpg.set_value(
@@ -382,8 +380,6 @@ class GraphViewModel:
         str: Path to saved HTML file
     """
     return self.graph_manager.export_to_mermaid(output_dir)
-
-  # --- Agnocast display control ---
 
   def has_node_type_info(self) -> bool:
     """Check if any node has agnocast_node_type attribute"""
@@ -437,8 +433,6 @@ class GraphViewModel:
         dpg.show_item(edge_id)
 
     self._apply_all_colors()
-
-  # --- Unified color resolution ---
 
   def _resolve_node_color(self, node_name: str) -> list[int]:
     """Determine the correct background color for a node given current toggle state.
