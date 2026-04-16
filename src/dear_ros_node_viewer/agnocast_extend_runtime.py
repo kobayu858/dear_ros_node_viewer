@@ -478,6 +478,7 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
     logger.info('Agnocast attributes found in dot. Skipping CLI queries.')
     mark_bridge_nodes(graph)
     synthesize_bridge_direct_edges(graph, upgrade_existing_edges=True)
+    graph.graph['is_agnocast_environment'] = True
     return graph
 
   # --- Step 1: ros2 node list_agnocast ---
@@ -485,9 +486,12 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   if node_list_result is None:
     logger.info('Agnocast node list unavailable. Agnocast features disabled.')
     _set_default_attributes(graph)
+    graph.graph['is_agnocast_environment'] = False
     return graph
+  
+  graph.graph['is_agnocast_environment'] = True
 
-  agnocast_only_nodes, _all_nodes = node_list_result
+  agnocast_only_nodes, _ = node_list_result
   logger.info('Agnocast-only (③) nodes: %d', len(agnocast_only_nodes))
 
   # --- Step 2: ros2 topic info_agnocast -v -d (per topic) ---

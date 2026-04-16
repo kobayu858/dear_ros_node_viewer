@@ -164,7 +164,8 @@ class GraphManager:
     """ load_graph_from_dot """
     self.graph = dot2networkx(filename, self.app_setting['display_unconnected_nodes'])
     self.graph = extend_agnocast_runtime(self.graph)
-    if save_agnocast_dot_path:
+    is_agnocast_env = self.graph.graph.get('is_agnocast_environment', True)
+    if save_agnocast_dot_path and is_agnocast_env:
       save_agnocast_dot(self.graph, save_agnocast_dot_path)
     self.load_graph_postprocess(filename)
 
