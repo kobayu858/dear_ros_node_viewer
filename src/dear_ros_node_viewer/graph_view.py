@@ -241,11 +241,11 @@ class GraphView:
     for edge in edge_list_sub:
       with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input) as attr_id:
         text_id = dpg.add_text(default_value=edge)
-        self.graph_viewmodel.add_dpg_nodeedge_idtext(node_name, edge, attr_id, text_id)
+        self.graph_viewmodel.add_dpg_nodeedge_idtext(node_name, edge, attr_id, text_id, port_type='in_')
     for edge in edge_list_pub:
       with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output) as attr_id:
         text_id = dpg.add_text(default_value=edge)
-        self.graph_viewmodel.add_dpg_nodeedge_idtext(node_name, edge, attr_id, text_id)
+        self.graph_viewmodel.add_dpg_nodeedge_idtext(node_name, edge, attr_id, text_id, port_type='out_')
 
     # Workaround for https://github.com/hoffstadt/DearPyGui/issues/2444
     if not edge_list_pub and not edge_list_sub:
@@ -291,8 +291,8 @@ class GraphView:
         label_dst = graph.edges[edge].get('label_dst', label)
         try:
           edge_id = dpg.add_node_link(
-            self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], label_src),
-            self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], label_dst),
+            self.graph_viewmodel.get_dpg_nodeedge_id(edge[0], label_src, port_type='out_'),
+            self.graph_viewmodel.get_dpg_nodeedge_id(edge[1], label_dst, port_type='in_'),
             parent=self.dpg_id_editor)
         except KeyError:
           logger.debug('Edge attr not found: %s -> %s (%s)', edge[0], edge[1], label)

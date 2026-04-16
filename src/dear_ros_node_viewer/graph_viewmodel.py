@@ -137,9 +137,9 @@ class GraphViewModel:
     """ Add association b/w node_name and dpg_id """
     self.dpg_bind['node_color'][node_name] = dpg_id
 
-  def add_dpg_nodeedge_idtext(self, node_name, edge_name, attr_id, text_id):
+  def add_dpg_nodeedge_idtext(self, node_name, edge_name, attr_id, text_id, port_type=''):
     """ Add association b/w node_attr and dpg_id """
-    key = self._make_nodeedge_key(node_name, edge_name)
+    key = self._make_nodeedge_key(node_name, edge_name, port_type)
     self.dpg_bind['nodeedge_id'][key] = attr_id
     self.dpg_bind['nodeedge_text'][key] = text_id
 
@@ -155,14 +155,14 @@ class GraphViewModel:
     """ Add association b/w callback_group_name and dpg_id """
     self.dpg_bind['callbackgroup_id'][callback_group_name] = dpg_id
 
-  def get_dpg_nodeedge_id(self, node_name, edge_name):
+  def get_dpg_nodeedge_id(self, node_name, edge_name, port_type=''):
     """ Get association for a selected name """
-    key = self._make_nodeedge_key(node_name, edge_name)
+    key = self._make_nodeedge_key(node_name, edge_name, port_type)
     return self.dpg_bind['nodeedge_id'][key]
 
-  def _make_nodeedge_key(self, node_name, edge_name):
+  def _make_nodeedge_key(self, node_name, edge_name, port_type=''):
     """create dictionary key for topic attribute in node"""
-    return node_name + '###' + edge_name
+    return node_name + '###' + port_type + edge_name
 
   def high_light_node(self, dpg_id_node):
     """ High light the selected node and connected nodes """

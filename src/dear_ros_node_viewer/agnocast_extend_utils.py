@@ -123,7 +123,6 @@ def synthesize_bridge_direct_edges(graph: nx.MultiDiGraph,
 
   edges_to_add: list[dict] = []
   for bridge_node in bridge_nodes:
-    # NetworkXの機能を使って、ブリッジノードに直接繋がるエッジのみを取得 (O(degree)で済む)
     upstream_edges = graph.in_edges(bridge_node, data=True)
     downstream_edges = graph.out_edges(bridge_node, data=True)
 

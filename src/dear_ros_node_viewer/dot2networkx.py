@@ -56,7 +56,7 @@ def dot2networkx_nodeonly(graph_org: nx.classes.digraph.DiGraph,
       continue
     node_pub = graph_org.nodes[edge[0]]['label']
     node_sub = graph_org.nodes[edge[1]]['label']
-    label = graph_org.edges[edge]['label']
+    label = graph_org.edges[edge]['label'].strip('"')
     # Agnocast edge attributes (present when loaded from an Agnocast-annotated dot)
     edge_data = graph_org.edges[edge]
     agnocast_edge_attrs = {
