@@ -73,52 +73,6 @@ class TestParseNodeListAgnocast(unittest.TestCase):
     self.assertEqual(all_nodes, {'/planner', '/detector'})
 
 
-class TestParseNodeInfoAgnocast(unittest.TestCase):
-  """Tests for _parse_node_info_agnocast."""
-
-  def test_basic_pub_sub(self):
-    output = (
-      "  Publishers:\n"
-      "    /points: sensor_msgs/msg/PointCloud2 (Agnocast enabled)\n"
-      "    /image: sensor_msgs/msg/Image (Agnocast enabled)\n"
-      "  Subscribers:\n"
-      "    /control_cmd: autoware_msgs/msg/ControlCommand (Agnocast enabled)\n"
-    )
-    pubs, subs = runtime._parse_node_info_agnocast(output)
-    self.assertEqual(pubs, {'/points', '/image'})
-    self.assertEqual(subs, {'/control_cmd'})
-
-  def test_empty_sections(self):
-    output = (
-      "  Publishers:\n"
-      "  Subscribers:\n"
-    )
-    pubs, subs = runtime._parse_node_info_agnocast(output)
-    self.assertEqual(pubs, set())
-    self.assertEqual(subs, set())
-
-  def test_mixed_sections_filters_non_agnocast(self):
-    """ROS 2 topics (no Agnocast suffix) are filtered out, Agnocast topics are kept."""
-    output = (
-      "  Publishers:\n"
-      "    /topic_a: msg/TypeA (Agnocast enabled)\n"
-      "    /ros2_only: msg/TypeR\n"
-      "  Subscribers:\n"
-      "    /topic_b: msg/TypeB (Agnocast enabled, bridged)\n"
-      "    /ros2_sub: msg/TypeS\n"
-      "  Service Servers:\n"
-      "    /srv_a: srv/TypeA\n"
-    )
-    pubs, subs = runtime._parse_node_info_agnocast(output)
-    self.assertEqual(pubs, {'/topic_a'})
-    self.assertEqual(subs, {'/topic_b'})
-
-  def test_empty_output(self):
-    pubs, subs = runtime._parse_node_info_agnocast("")
-    self.assertEqual(pubs, set())
-    self.assertEqual(subs, set())
-
-
 class TestParseTopicListAgnocast(unittest.TestCase):
   """Tests for _parse_topic_list_agnocast."""
 
@@ -214,8 +168,6 @@ class TestParseSingleTopicInfo(unittest.TestCase):
     endpoints = runtime._parse_single_topic_info(block)
     self.assertEqual(len(endpoints.agnocast_pubs), 0)
     self.assertEqual(len(endpoints.agnocast_subs), 0)
-
-
 
 
 # ===========================================================================
@@ -464,12 +416,6 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       "/node_b\n"
       "/detector (Agnocast enabled)\n"
     )
-    node_info_output = (
-      "  Publishers:\n"
-      "    /topic_y: msg/Type (Agnocast enabled)\n"
-      "  Subscribers:\n"
-      "    /topic_x: msg/Type (Agnocast enabled)\n"
-    )
     topic_list_output = (
       "/topic_x (Agnocast enabled)\n"
       "/topic_y (Agnocast enabled)\n"
@@ -509,9 +455,6 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       if 'node list_agnocast' in cmd_str:
         result.returncode = 0
         result.stdout = node_list_output
-      elif 'node info_agnocast' in cmd_str:
-        result.returncode = 0
-        result.stdout = node_info_output
       elif 'topic list_agnocast' in cmd_str:
         result.returncode = 0
         result.stdout = topic_list_output
@@ -557,8 +500,8 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
     for edge in g.edges:
       self.assertFalse(g.edges[edge]['is_agnocast'])
 
-  def test_partial_failure_node_info(self):
-    """When node info fails for one ③ node, others still work."""
+  def test_partial_failure_topic_info(self):
+    """When topic info fails for one topic, others still work."""
     def side_effect(cmd, **kwargs):
       cmd_str = ' '.join(cmd)
       result = MagicMock()
@@ -567,21 +510,26 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
         result.returncode = 0
         result.stdout = "/detector_a (Agnocast enabled)\n/detector_b (Agnocast enabled)\n"
         return result
-      if 'node info_agnocast' in cmd_str:
-        if 'detector_a' in cmd_str:
+      if 'topic list_agnocast' in cmd_str:
+        result.returncode = 0
+        result.stdout = "/topic_a (Agnocast enabled)\n/topic_b (Agnocast enabled)\n"
+        return result
+      if 'topic info_agnocast' in cmd_str:
+        if 'topic_a' in cmd_str:
           result.returncode = 0
-          result.stdout = "  Publishers:\n    /topic_x: msg/T (Agnocast enabled)\n  Subscribers:\n"
+          result.stdout = (
+            "Agnocast Publisher count: 1\n\n"
+            "Node name: detector_a\n"
+            "Node namespace: /\n"
+            "Endpoint type: PUBLISHER (Agnocast enabled)\n"
+          )
           return result
         else:
-          # detector_b fails
+          # topic_b fails
           result.returncode = 1
           result.stdout = ''
           result.stderr = 'timeout'
           return result
-      if 'topic list_agnocast' in cmd_str:
-        result.returncode = 1  # topic list fails
-        result.stdout = ''
-        return result
       result.returncode = 1
       result.stdout = ''
       return result
@@ -590,9 +538,9 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
       g = _make_simple_graph()
       g = runtime.extend_agnocast_runtime(g)
 
-    # detector_a should be added (its info succeeded)
+    # detector_a should be added (its topic info succeeded and mapped it)
     self.assertIn('"/detector_a"', g.nodes)
-    # detector_b should also be added (node is added even if no edge info)
+    # detector_b should also be added (node listで取得できたものはすべて追加される仕様)
     self.assertIn('"/detector_b"', g.nodes)
 
   def test_bridge_pipeline(self):
