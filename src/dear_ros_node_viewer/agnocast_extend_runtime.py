@@ -82,27 +82,23 @@ def _run_agnocast_command(cmd: list[str], timeout: int = 15) -> str | None:
 # Parsers
 # ---------------------------------------------------------------------------
 
-def _parse_node_list_agnocast(output: str) -> tuple[set[str], set[str]]:
+def _parse_node_list_agnocast(output: str) -> set[str]:
   """Parse ``ros2 node list_agnocast`` output.
 
   Returns
   -------
   agnocast_only_nodes : set[str]
       Nodes with ``(Agnocast enabled)`` — these are type-③ nodes.
-  all_nodes : set[str]
-      All nodes listed.
   """
   agnocast_only_nodes: set[str] = set()
-  all_nodes: set[str] = set()
   for line in output.strip().splitlines():
     line = line.strip()
     if not line:
       continue
     node_name = line.split(' ')[0]
-    all_nodes.add(node_name)
     if '(Agnocast enabled)' in line:
       agnocast_only_nodes.add(node_name)
-  return agnocast_only_nodes, all_nodes
+  return agnocast_only_nodes
 
 
 def _parse_topic_list_agnocast(output: str) -> set[str]:
@@ -160,7 +156,7 @@ def _parse_single_topic_info(block: str) -> TopicEndpoints:
 # CLI fetchers
 # ---------------------------------------------------------------------------
 
-def _fetch_node_list() -> tuple[set[str], set[str]] | None:
+def _fetch_node_list() -> set[str] | None:
   """Execute ``ros2 node list_agnocast`` and return parsed result."""
   output = _run_agnocast_command(['ros2', 'node', 'list_agnocast'])
   if output is None:
@@ -485,7 +481,7 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   
   graph.graph['is_agnocast_environment'] = True
 
-  agnocast_only_nodes, _ = node_list_result
+  agnocast_only_nodes = node_list_result
   logger.info('Agnocast-only (③) nodes: %d', len(agnocast_only_nodes))
 
   # --- Step 2: ros2 topic info_agnocast -v -d (per topic) ---

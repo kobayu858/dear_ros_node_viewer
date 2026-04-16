@@ -51,26 +51,22 @@ class TestParseNodeListAgnocast(unittest.TestCase):
       "/detector (Agnocast enabled)\n"
       "/tracker (Agnocast enabled)\n"
     )
-    agnocast_only, all_nodes = runtime._parse_node_list_agnocast(output)
+    agnocast_only = runtime._parse_node_list_agnocast(output)
     self.assertEqual(agnocast_only, {'/detector', '/tracker'})
-    self.assertEqual(all_nodes, {'/planner', '/lidar', '/detector', '/tracker'})
 
   def test_empty_output(self):
-    agnocast_only, all_nodes = runtime._parse_node_list_agnocast("")
+    agnocast_only = runtime._parse_node_list_agnocast("")
     self.assertEqual(agnocast_only, set())
-    self.assertEqual(all_nodes, set())
 
   def test_no_agnocast_nodes(self):
     output = "/planner\n/lidar\n"
-    agnocast_only, all_nodes = runtime._parse_node_list_agnocast(output)
+    agnocast_only = runtime._parse_node_list_agnocast(output)
     self.assertEqual(agnocast_only, set())
-    self.assertEqual(all_nodes, {'/planner', '/lidar'})
 
   def test_blank_lines_ignored(self):
     output = "\n/planner\n\n/detector (Agnocast enabled)\n\n"
-    agnocast_only, all_nodes = runtime._parse_node_list_agnocast(output)
+    agnocast_only = runtime._parse_node_list_agnocast(output)
     self.assertEqual(agnocast_only, {'/detector'})
-    self.assertEqual(all_nodes, {'/planner', '/detector'})
 
 
 class TestParseTopicListAgnocast(unittest.TestCase):
