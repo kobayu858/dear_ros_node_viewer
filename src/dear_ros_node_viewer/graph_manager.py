@@ -166,17 +166,16 @@ class GraphManager:
     if is_dynamic_load:
       self.graph = extend_agnocast_runtime(self.graph)
       if self.graph.graph.get('is_agnocast_environment', True):
-        save_agnocast_dot(self.graph, filename)
+        save_agnocast_dot(self.graph, dot_path=filename)
 
     self.load_graph_postprocess(filename)
 
   def load_graph_from_running_ros(self):
     """ load_graph_from_running_ros """
     ros2networkx = Ros2Networkx(node_name='temp')
-    dot_path = './temp.dot'
-    ros2networkx.save_graph(dot_path)
+    ros2networkx.save_graph('./temp.dot')
     ros2networkx.shutdown()
-    self.load_graph_from_dot(dot_path, is_dynamic_load=True)
+    self.load_graph_from_dot('./temp.dot', is_dynamic_load=True)
     # for node in self.graph.nodes:
     #     if '"/temp"' == node:
     #         node_observer = node
