@@ -25,7 +25,7 @@ from .caret2networkx import make_graph_from_topic_association
 from .agnocast_extend_utils import (
   AGNOCAST_NODE_ATTRS,
   AGNOCAST_EDGE_ATTRS,
-  coerce_dot_attr,
+  parse_dot_bool_attr,
 )
 
 logger = LoggerFactory.create(__name__)
@@ -44,7 +44,7 @@ def dot2networkx_nodeonly(graph_org: nx.classes.digraph.DiGraph,
     # Agnocast node attributes (present when loaded from an Agnocast-annotated dot)
     node_data = graph_org.nodes[node_org]
     agnocast_node_attrs = {
-      attr: coerce_dot_attr(attr, node_data[attr])
+      attr: parse_dot_bool_attr(attr, node_data[attr])
       for attr in AGNOCAST_NODE_ATTRS
       if attr in node_data
     }
@@ -56,11 +56,11 @@ def dot2networkx_nodeonly(graph_org: nx.classes.digraph.DiGraph,
       continue
     node_pub = graph_org.nodes[edge[0]]['label']
     node_sub = graph_org.nodes[edge[1]]['label']
-    label = graph_org.edges[edge]['label'].strip('"')
+    label = graph_org.edges[edge]['label']
     # Agnocast edge attributes (present when loaded from an Agnocast-annotated dot)
     edge_data = graph_org.edges[edge]
     agnocast_edge_attrs = {
-      attr: coerce_dot_attr(attr, edge_data[attr])
+      attr: parse_dot_bool_attr(attr, edge_data[attr])
       for attr in AGNOCAST_EDGE_ATTRS
       if attr in edge_data
     }

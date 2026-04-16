@@ -39,19 +39,13 @@ _AGNOCAST_BOOL_ATTRS = frozenset({
 })
 
 
-def coerce_dot_attr(key: str, value: str) -> object:
+def parse_dot_bool_attr(key: str, value: str) -> object:
   """Convert a dot attribute value to its proper Python type.
-
-  Dot files store every attribute as a string.  This helper converts
-  known boolean attributes back to ``bool`` so that downstream code
-  (e.g. ``edge_data.get('is_agnocast', False)``) works correctly —
-  the string ``"False"`` is truthy in Python and would otherwise cause
-  every edge to appear as Agnocast.
   """
-  stripped = value.strip('"')
+  # stripped = value.strip('"')
   if key in _AGNOCAST_BOOL_ATTRS:
-    return stripped == 'True'
-  return stripped
+    return value.strip('"') == 'True'
+  return value
 
 
 def base_topic(label: str) -> str:
