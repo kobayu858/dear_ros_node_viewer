@@ -449,30 +449,18 @@ class GraphViewModel:
   def _resolve_edge_color(self, edge) -> list[int]:
     """Determine the correct color for an edge given current toggle state.
 
-    Bridge OFF (default):
-      - Bridge edges are hidden (is_bridge_edge)
-      - Synthesized direct edges (is_bridged) shown in orange
-        to indicate a bridge exists on this path
-    Bridge ON:
-      - Bridge edges are visible, colored by normal rules
-        (Agnocast=cyan, ROS 2=node color)
-      - Synthesized direct edges are hidden
-
     Normal rules (highest priority first):
-      1. Bridged direct edge + Bridge OFF → orange
-      2. Show Agnocast ON + is_agnocast → cyan
+      1. Show Agnocast Edge ON + Bridged direct edge + Bridge OFF → orange
+      2. Show Agnocast Edge ON + is_agnocast → cyan
       3. Default → publisher node color
     """
     graph = self.get_graph()
     edge_data = graph.edges[edge]
 
-    # Synthesized direct edge: orange when Bridge OFF (visible state)
-    if edge_data.get('is_bridged', False) \
-        and not self.agnocast_display['show_bridge']:
-      return self.color_bridge_edge
-
-    # Normal agnocast coloring
     if self.agnocast_display['show_agnocast_edge']:
+      if edge_data.get('is_bridged', False) and not self.agnocast_display['show_bridge']:
+        return self.color_bridge_edge
+
       if edge_data.get('is_agnocast', False):
         return self.color_agnocast_edge
 
