@@ -177,6 +177,12 @@ class GraphManager:
     ros2networkx.save_graph(dot_path)
     ros2networkx.shutdown()
     self.load_graph_from_dot(dot_path, is_dynamic_load=True)
+    # for node in self.graph.nodes:
+    #     if '"/temp"' == node:
+    #         node_observer = node
+    #         break
+    # self.graph.remove_node(node_observer)
+    # self.reset_internl_status()
 
   def load_graph_postprocess(self, filename):
     """ Common process after loading graph """

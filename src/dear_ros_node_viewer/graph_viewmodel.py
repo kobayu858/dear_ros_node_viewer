@@ -177,6 +177,7 @@ class GraphViewModel:
       subscribing_edge_publishing_node_name_list = \
         [e[0] for e in graph.edges if e[1] == node_name]
       if self.node_selected_dict[node_name]:
+        # Disable highlight for all the other nodes#
         self.node_selected_dict[node_name] = False
         dpg.set_value(
           self.dpg_bind['node_color'][node_name],
@@ -353,6 +354,7 @@ class GraphViewModel:
 
   def high_light_caret_path(self, path_name):
     """ High light the selected CARET path """
+    # Disable high light for all nodes
     graph = self.get_graph()
     for node_name in graph.nodes:
       dpg.set_value(

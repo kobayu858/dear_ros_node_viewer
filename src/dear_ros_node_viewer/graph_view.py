@@ -165,12 +165,15 @@ class GraphView:
     """ Add nodes and attributes """
     graph = self.graph_viewmodel.get_graph()
     for node_name in graph.nodes:
+      # Calculate position in window
       pos = graph.nodes[node_name]['pos']
       pos = [
         pos[0] * self.graph_viewmodel.graph_size[0],
         pos[1] * self.graph_viewmodel.graph_size[1]]
-
+        
+      # Allocate node
       with dpg.node(label=node_name, pos=pos) as node_id:
+        # Save node id
         self.graph_viewmodel.add_dpg_node_id(node_name, node_id)
 
         # Set color
@@ -196,13 +199,16 @@ class GraphView:
               dpg.mvNodeCol_NodeBackground,
               initial_bg,
               category=dpg.mvThemeCat_Nodes)
+            # Set color value
             self.graph_viewmodel.add_dpg_node_color(node_name, theme_color)
             dpg.bind_item_theme(node_id, theme_id)
 
+        # Set callback
         with dpg.item_handler_registry() as node_select_handler:
           dpg.add_item_clicked_handler(callback=self._cb_node_clicked)
           dpg.bind_item_handler_registry(node_id, node_select_handler)
 
+        # Add text for node I/O(topics)
         self.add_node_attr_in_dpg(node_name, display_cb_detail)
 
         if is_bridge:
@@ -241,11 +247,14 @@ class GraphView:
         self.graph_viewmodel.add_dpg_nodeedge_idtext(node_name, edge, attr_id, text_id, port_type='out_')
 
     # Workaround for https://github.com/hoffstadt/DearPyGui/issues/2444
+    # Otherwise, Nodes with the first attribute "empty" expand infinitely in width
     if not edge_list_pub and not edge_list_sub:
       with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output):
         dpg.add_text('')
-
+      
+    # Add text for executor/callbackgroups
     self.add_node_callbackgroup_in_dpg(node_name, display_cb_detail)
+    # Hide by default
     self.graph_viewmodel.display_callbackgroup(False)
 
   def add_node_callbackgroup_in_dpg(self, node_name, display_cb_detail: bool):
@@ -256,6 +265,7 @@ class GraphView:
       for callback_group in callback_group_list:
         executor_name = callback_group['executor_name']
         callback_group_name = callback_group['callback_group_name']
+        # callback_group_type = callback_group['callback_group_type']
         callback_group_name = self.graph_viewmodel.omit_name(
           callback_group_name, GraphViewModel.OmitType.LAST)
         callback_detail_list = callback_group['callback_detail_list']
@@ -264,6 +274,7 @@ class GraphView:
           dpg.add_text('=== Callback Group [' + executor_name + '] ===', color=color)
           if display_cb_detail:
             for callback_detail in callback_detail_list:
+              # callback_name = callback_detail['callback_name']
               callback_type = callback_detail['callback_type']
               description = callback_detail['description']
               description = self.graph_viewmodel.omit_name(
