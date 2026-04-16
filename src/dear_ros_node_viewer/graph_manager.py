@@ -159,15 +159,14 @@ class GraphManager:
     self.load_graph_postprocess(filename)
     self.caret_path_dict.update(get_path_dict(filename))
 
-  def load_graph_from_dot(self, filename: str,
-               save_agnocast_dot_path: str | None = None):
+  def load_graph_from_dot(self, filename: str, is_dynamic_load: bool = False):
     """ load_graph_from_dot """
     self.graph = dot2networkx(filename, self.app_setting['display_unconnected_nodes'])
 
-    if save_agnocast_dot_path: 
+    if is_dynamic_load:
       self.graph = extend_agnocast_runtime(self.graph)
       if self.graph.graph.get('is_agnocast_environment', True):
-        save_agnocast_dot(self.graph, save_agnocast_dot_path)
+        save_agnocast_dot(self.graph, filename)
 
     self.load_graph_postprocess(filename)
 
@@ -177,7 +176,7 @@ class GraphManager:
     dot_path = './temp.dot'
     ros2networkx.save_graph(dot_path)
     ros2networkx.shutdown()
-    self.load_graph_from_dot(dot_path, save_agnocast_dot_path=dot_path)
+    self.load_graph_from_dot(dot_path, is_dynamic_load=True)
 
   def load_graph_postprocess(self, filename):
     """ Common process after loading graph """
