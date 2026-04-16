@@ -34,7 +34,6 @@ from .agnocast_extend_utils import (
 
 logger = LoggerFactory.create(__name__)
 
-AGNOCAST_EXECUTOR_PREFIX = 'agnocast_'
 AGNOCAST_ONLY_EXECUTOR_PREFIX = 'agnocast_only_'
 
 
@@ -57,33 +56,21 @@ def _mark_agnocast_node_types(graph: nx.MultiDiGraph, filename: str) -> None:
     arch = yaml.load(f, Loader=SafeLoader)
 
   agnocast_only_cbg_names: set[str] = set()
-  agnocast_cbg_names: set[str] = set()
   for executor in arch.get('executors', []):
     executor_type = executor.get('executor_type', '')
     if executor_type.startswith(AGNOCAST_ONLY_EXECUTOR_PREFIX):
       for cbg_name in executor.get('callback_group_names', []):
         agnocast_only_cbg_names.add(cbg_name)
-    elif executor_type.startswith(AGNOCAST_EXECUTOR_PREFIX):
-      for cbg_name in executor.get('callback_group_names', []):
-        agnocast_cbg_names.add(cbg_name)
 
   agnocast_only_nodes: set[str] = set()
-  agnocast_nodes: set[str] = set() 
   for node in arch.get('nodes', []):
     for cbg in node.get('callback_groups', []):
       cbg_name = cbg.get('callback_group_name', '')
       if cbg_name in agnocast_only_cbg_names:
         agnocast_only_nodes.add(quote_name(node['node_name']))
-      elif cbg_name in agnocast_cbg_names:
-        agnocast_nodes.add(quote_name(node['node_name']))
 
   for node_name in graph.nodes:
-    if node_name in agnocast_only_nodes:
-      graph.nodes[node_name]['agnocast_node_type'] = 'agnocast_node'
-    elif node_name in agnocast_nodes:
-      graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_with_agnocast'
-    else:
-      graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'
+    graph.nodes[node_name]['is_agnocast_node'] = node_name in agnocast_only_nodes
 
 
 
@@ -128,7 +115,7 @@ def extend_agnocast(filename: str,
     1 for e in graph.edges if graph.edges[e].get('is_agnocast', False))
   agnocast_node_count = sum(
       1 for n in graph.nodes
-      if graph.nodes[n].get('agnocast_node_type', '') in ('rclcpp_with_agnocast', 'agnocast_node'))
+      if graph.nodes[n].get('is_agnocast_node', False))
   bridge_node_count = sum(
     1 for n in graph.nodes if graph.nodes[n].get('is_bridge_node', False))
   bridged_edge_count = sum(

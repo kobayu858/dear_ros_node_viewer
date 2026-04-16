@@ -29,13 +29,13 @@ AGNOCAST_TOPIC_SUFFIX = '_agnocast'
 
 # Agnocast attribute names.
 # Used by dot2networkx (read) and graph_manager/save_agnocast_dot (write).
-AGNOCAST_NODE_ATTRS = ('agnocast_node_type', 'is_bridge_node')
+AGNOCAST_NODE_ATTRS = ('is_agnocast_node', 'is_bridge_node')
 AGNOCAST_EDGE_ATTRS = ('is_agnocast', 'is_bridge_edge', 'is_bridged',
                        'label_src', 'label_dst')
 
 # Attributes that are bool in the NetworkX graph but stored as strings in dot.
 _AGNOCAST_BOOL_ATTRS = frozenset({
-  'is_bridge_node', 'is_agnocast', 'is_bridge_edge', 'is_bridged',
+  'is_bridge_node', 'is_agnocast_node', 'is_agnocast', 'is_bridge_edge', 'is_bridged',
 })
 
 

@@ -340,34 +340,18 @@ def _mark_agnocast_edges(graph: nx.MultiDiGraph,
 def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
              agnocast_only_nodes: set[str] | None
              ) -> nx.MultiDiGraph:
-  """  ``agnocast_node_type`` is set to:
-    - ``'agnocast_node'`` for ③ nodes
-    - ``'rclcpp_with_agnocast'`` for ② nodes
-    - ``'rclcpp_only'`` for ① nodes
-  """
-  # Collect nodes that touch an agnocast edge.
-  # Bridged (synthesized) edges are skipped entirely — they are shortcuts
-  # across a bridge node and don't indicate that the endpoint nodes
-  # themselves use Agnocast.  The real Agnocast edges (③↔③, ②→③, etc.)
-  # already cover the correct nodes.
-  nodes_with_agnocast: set[str] = set()
-  for edge in graph.edges:
-    if graph.edges[edge].get('is_agnocast', False) \
-        and not graph.edges[edge].get('is_bridged', False):
-      src, dst, _ = edge
-      nodes_with_agnocast.add(src)
-      nodes_with_agnocast.add(dst)
+  """Set ``is_agnocast_node`` (bool) on every node.
 
-  # Node type classification
+  ``is_agnocast_node`` is True for ③ nodes (agnocast::Node),
+  False for all others (① rclcpp-only nodes).
+  """
   if agnocast_only_nodes is not None:
     quoted_agnocast_nodes = {_quote_name(n) for n in agnocast_only_nodes}
-    for node_name in graph.nodes:
-      if node_name in quoted_agnocast_nodes:
-        graph.nodes[node_name]['agnocast_node_type'] = 'agnocast_node'
-      elif node_name in nodes_with_agnocast:
-        graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_with_agnocast'
-      else:
-        graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'
+  else:
+    quoted_agnocast_nodes = set()
+
+  for node_name in graph.nodes:
+    graph.nodes[node_name]['is_agnocast_node'] = node_name in quoted_agnocast_nodes
 
   return graph
 
@@ -379,14 +363,14 @@ def _has_agnocast_attributes(graph: nx.MultiDiGraph) -> bool:
   set only by ``extend_agnocast_runtime()`` or ``extend_agnocast()``.
   When True, the dot was saved with Agnocast info and CLI queries can be skipped.
   """
-  return any('agnocast_node_type' in graph.nodes[n] for n in graph.nodes)
+  return any('is_agnocast_node' in graph.nodes[n] for n in graph.nodes)
 
 
 def _set_default_attributes(graph: nx.MultiDiGraph) -> None:
   """Set safe defaults when CLI is completely unavailable."""
   for node_name in graph.nodes:
     graph.nodes[node_name]['is_bridge_node'] = False
-    graph.nodes[node_name]['agnocast_node_type'] = 'rclcpp_only'
+    graph.nodes[node_name]['is_agnocast_node'] = False
   for edge in graph.edges:
     graph.edges[edge]['is_agnocast'] = False
     graph.edges[edge]['is_bridge_edge'] = False
@@ -440,8 +424,6 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   graph.graph['is_agnocast_environment'] = True
 
   agnocast_only_nodes = node_list_result
-  logger.info('Agnocast-only (③) nodes: %d', len(agnocast_only_nodes))
-
 
   topic_endpoints = _fetch_all_topic_info()
   if topic_endpoints is not None:

@@ -69,21 +69,19 @@ class GraphViewModel:
 
     # Agnocast display state
     self.agnocast_display = {
-      'show_agnocast': False,
-      'show_node_diff': False,
+      'show_agnocast_edge': False,
+      'show_agnocast_node': False,
       'show_bridge': False,
     }
 
     # Agnocast colors
     self.color_agnocast_edge = [0, 255, 255]       # bright cyan for agnocast edges
-    self.color_agnocast_node = [0, 200, 200]        # cyan border for agnocast nodes
-    self.color_agnocast_node_bg = [0, 120, 120]     # teal background for ③ agnocast::Node
+    self.color_agnocast_node = [0, 120, 120]        # teal background for agnocast nodes
     self.color_bridge_node = [220, 130, 20]          # orange for bridge nodes
     self.color_bridge_edge = [220, 130, 20]          # orange for bridge edges
     if app_setting['bg_white']:
       self.color_agnocast_edge = [0, 150, 150]
-      self.color_agnocast_node = [0, 140, 140]
-      self.color_agnocast_node_bg = [180, 230, 230]
+      self.color_agnocast_node = [180, 230, 230]
       self.color_bridge_node = [220, 150, 50]
       self.color_bridge_edge = [220, 150, 50]
 
@@ -383,14 +381,6 @@ class GraphViewModel:
     """
     return self.graph_manager.export_to_mermaid(output_dir)
 
-  def has_node_type_info(self) -> bool:
-    """Check if any node has agnocast_node_type attribute"""
-    graph = self.get_graph()
-    for node_name in graph.nodes:
-      if 'agnocast_node_type' in graph.nodes[node_name]:
-        return True
-    return False
-
   def has_bridge_nodes(self) -> bool:
     """Check if the graph has any bridge nodes"""
     graph = self.get_graph()
@@ -399,14 +389,14 @@ class GraphViewModel:
         return True
     return False
 
-  def toggle_agnocast_display(self, onoff: bool):
-    """Toggle Agnocast edge/node coloring"""
-    self.agnocast_display['show_agnocast'] = onoff
+  def toggle_agnocast_edge_display(self, onoff: bool):
+    """Toggle Agnocast edge coloring"""
+    self.agnocast_display['show_agnocast_edge'] = onoff
     self._apply_all_colors()
 
-  def toggle_node_diff_display(self, onoff: bool):
-    """Toggle Node Diff coloring (② vs ③ distinction)"""
-    self.agnocast_display['show_node_diff'] = onoff
+  def toggle_agnocast_node_display(self, onoff: bool):
+    """Toggle Agnocast node coloring"""
+    self.agnocast_display['show_agnocast_node'] = onoff
     self._apply_all_colors()
 
   def toggle_bridge_display(self, onoff: bool):
@@ -441,10 +431,8 @@ class GraphViewModel:
 
     Priority (highest first):
       1. Bridge node → orange (always, regardless of toggles)
-      2. Show Node Diff ON + ③ node → teal
-      3. Show Node Diff ON + ② node → cyan
-      4. Show Agnocast ON + ②③ node → cyan
-      5. Default → gray
+      2. Show Agnocast Node ON + agnocast node → teal
+      3. Default → gray
     """
     graph = self.get_graph()
     node_data = graph.nodes[node_name]
@@ -452,16 +440,8 @@ class GraphViewModel:
     if node_data.get('is_bridge_node', False):
       return self.color_bridge_node
 
-    if self.agnocast_display['show_node_diff']:
-      node_type = node_data.get('agnocast_node_type', '')
-      if node_type == 'agnocast_node':
-        return self.color_agnocast_node_bg
-      if node_type == 'rclcpp_with_agnocast':
-        return self.color_agnocast_node
-
-    if self.agnocast_display['show_agnocast']:
-      node_type = node_data.get('agnocast_node_type', '')
-      if node_type in ('rclcpp_with_agnocast', 'agnocast_node'):
+    if self.agnocast_display['show_agnocast_node']:
+      if node_data.get('is_agnocast_node', False):
         return self.color_agnocast_node
 
     return self.color_highlight_def
@@ -492,7 +472,7 @@ class GraphViewModel:
       return self.color_bridge_edge
 
     # Normal agnocast coloring
-    if self.agnocast_display['show_agnocast']:
+    if self.agnocast_display['show_agnocast_edge']:
       if edge_data.get('is_agnocast', False):
         return self.color_agnocast_edge
 
