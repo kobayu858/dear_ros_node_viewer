@@ -170,7 +170,7 @@ class GraphView:
       pos = [
         pos[0] * self.graph_viewmodel.graph_size[0],
         pos[1] * self.graph_viewmodel.graph_size[1]]
-        
+
       # Allocate node
       with dpg.node(label=node_name, pos=pos) as node_id:
         # Save node id
@@ -250,8 +250,8 @@ class GraphView:
     # Otherwise, Nodes with the first attribute "empty" expand infinitely in width
     if not edge_list_pub and not edge_list_sub:
       with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output):
-        dpg.add_text('')
-      
+        dpg.add_text("")
+
     # Add text for executor/callbackgroups
     self.add_node_callbackgroup_in_dpg(node_name, display_cb_detail)
     # Hide by default
