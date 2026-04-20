@@ -39,8 +39,7 @@ class GraphView:
     self.dpg_id_mermaid_export_dialog: int = -1
 
     # Agnocast menu item IDs
-    self.dpg_id_agnocast_edge: int = -1
-    self.dpg_id_agnocast_node: int = -1
+    self.dpg_id_agnocast: int = -1
     self.dpg_id_bridge: int = -1
 
     self.color_node_selected = [0, 0, 64]
@@ -151,12 +150,9 @@ class GraphView:
                   callback=self._cb_menu_graph_current)
 
       with dpg.menu(label="Agnocast"):
-        self.dpg_id_agnocast_edge = dpg.add_menu_item(
-          label="Show Agnocast Edge",
-          callback=self._cb_menu_agnocast_edge_toggle)
-        self.dpg_id_agnocast_node = dpg.add_menu_item(
-          label="Show Agnocast Node",
-          callback=self._cb_menu_agnocast_node_toggle)
+        self.dpg_id_agnocast = dpg.add_menu_item(
+          label="Show Agnocast",
+          callback=self._cb_menu_agnocast_toggle)
         self.dpg_id_bridge = dpg.add_menu_item(
           label="Show Bridge",
           callback=self._cb_menu_bridge_toggle)
@@ -433,18 +429,11 @@ class GraphView:
     path_name = dpg.get_item_label(sender)
     self.graph_viewmodel.high_light_caret_path(path_name)
 
-  def _cb_menu_agnocast_edge_toggle(self, sender, app_data, user_data):
-    """Toggle Agnocast edge coloring"""
-    current = self.graph_viewmodel.agnocast_display['show_agnocast_edge']
-    self.graph_viewmodel.toggle_agnocast_edge_display(not current)
-    label = 'Hide Agnocast Edge' if not current else 'Show Agnocast Edge'
-    dpg.set_item_label(sender, label)
-
-  def _cb_menu_agnocast_node_toggle(self, sender, app_data, user_data):
-    """Toggle Agnocast node coloring"""
-    current = self.graph_viewmodel.agnocast_display['show_agnocast_node']
-    self.graph_viewmodel.toggle_agnocast_node_display(not current)
-    label = 'Hide Agnocast Node' if not current else 'Show Agnocast Node'
+  def _cb_menu_agnocast_toggle(self, sender, app_data, user_data):
+    """Toggle Agnocast edge and node coloring together"""
+    current = self.graph_viewmodel.agnocast_display['show_agnocast']
+    self.graph_viewmodel.toggle_agnocast_display(not current)
+    label = 'Hide Agnocast' if not current else 'Show Agnocast'
     dpg.set_item_label(sender, label)
 
   def _cb_menu_bridge_toggle(self, sender, app_data, user_data):

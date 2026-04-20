@@ -69,8 +69,7 @@ class GraphViewModel:
 
     # Agnocast display state
     self.agnocast_display = {
-      'show_agnocast_edge': False,
-      'show_agnocast_node': False,
+      'show_agnocast': False,
       'show_bridge': False,
     }
 
@@ -389,14 +388,9 @@ class GraphViewModel:
         return True
     return False
 
-  def toggle_agnocast_edge_display(self, onoff: bool):
-    """Toggle Agnocast edge coloring"""
-    self.agnocast_display['show_agnocast_edge'] = onoff
-    self._apply_all_colors()
-
-  def toggle_agnocast_node_display(self, onoff: bool):
-    """Toggle Agnocast node coloring"""
-    self.agnocast_display['show_agnocast_node'] = onoff
+  def toggle_agnocast_display(self, onoff: bool):
+    """Toggle Agnocast edge and node coloring together"""
+    self.agnocast_display['show_agnocast'] = onoff
     self._apply_all_colors()
 
   def toggle_bridge_display(self, onoff: bool):
@@ -440,7 +434,7 @@ class GraphViewModel:
     if node_data.get('is_bridge_node', False):
       return self.color_bridge_node
 
-    if self.agnocast_display['show_agnocast_node']:
+    if self.agnocast_display['show_agnocast']:
       if node_data.get('is_agnocast_node', False):
         return self.color_agnocast_node
 
@@ -457,7 +451,7 @@ class GraphViewModel:
     graph = self.get_graph()
     edge_data = graph.edges[edge]
 
-    if self.agnocast_display['show_agnocast_edge']:
+    if self.agnocast_display['show_agnocast']:
       if edge_data.get('is_bridged', False) and not self.agnocast_display['show_bridge']:
         return self.color_bridge_edge
 
