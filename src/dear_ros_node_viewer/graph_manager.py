@@ -75,7 +75,7 @@ def save_agnocast_dot(graph: nx.MultiDiGraph, dot_path: str) -> None:
     bare = node_name.strip('"')
     dot_node = label_to_dot_node.get(bare)
     if dot_node is None:
-      # ③ node not in original dot — add it.
+      # node not in original dot — add it.
       # Use the same n___ prefix ID format as ros2networkx to avoid mixing
       # quoted-label IDs with n___xxx IDs, which confuses dear_ros_node_viewer.
       node_id = 'n__' + bare.replace('/', '_').replace('-', '_')
@@ -111,7 +111,7 @@ def save_agnocast_dot(graph: nx.MultiDiGraph, dot_path: str) -> None:
       dst_label = dst_node[0].get_attributes().get('label', '').strip('"')
       dot_edge_lookup[(src_label, dst_label, topic)] = dot_edge
 
-  # Annotate edges / add new ③ edges
+  # Annotate edges / add new agnocast edges
   for src, dst, key in graph.edges:
     edge_data = graph.edges[src, dst, key]
     topic = edge_data.get('label', '').strip('"')
@@ -120,7 +120,7 @@ def save_agnocast_dot(graph: nx.MultiDiGraph, dot_path: str) -> None:
 
     dot_edge = dot_edge_lookup.get((src_bare, dst_bare, topic))
     if dot_edge is None:
-      # Edge added by extend_agnocast_runtime (③ node edge) — add to dot.
+      # Edge added by extend_agnocast_runtime (agnocast node edge) — add to dot.
       # Use pydot node IDs (not NetworkX names) so the edge references
       # the correct nodes in the dot graph.
       src_dot_id = label_to_dot_id.get(src_bare, src)

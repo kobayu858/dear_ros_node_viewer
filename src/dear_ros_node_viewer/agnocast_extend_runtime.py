@@ -76,7 +76,7 @@ def _parse_node_list_agnocast(output: str) -> set[str]:
   Returns
   -------
   agnocast_only_nodes : set[str]
-      Nodes with ``(Agnocast enabled)`` — these are type-③ nodes.
+      Nodes with ``(Agnocast enabled)`` — these are agnocast::Node nodes.
   """
   agnocast_only_nodes: set[str] = set()
   for line in output.strip().splitlines():
@@ -212,10 +212,10 @@ def _add_edges_for_node(graph: nx.MultiDiGraph,
             sub_topics: set[str],
             topic_to_publishers: dict[str, set[str]],
             topic_to_subscribers: dict[str, set[str]]):
-  """Add edges between a ③ node and existing nodes via topic matching.
+  """Add edges between an agnocast::Node and existing nodes via topic matching.
 
-  - ③ publishes → edges to existing subscribers
-  - ③ subscribes → edges from existing publishers
+  - agnocast::Node publishes → edges to existing subscribers
+  - agnocast::Node subscribes → edges from existing publishers
   """
   for topic in pub_topics:
     for sub_node in topic_to_subscribers.get(topic, set()):
@@ -264,7 +264,7 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
       continue
 
     graph.add_node(quoted_name)
-    logger.debug('Added ③ node: %s', node_name)
+    logger.debug('Added agnocast node: %s', node_name)
 
     if node_name in node_topics:
       pub_topics, sub_topics = node_topics[node_name]
@@ -319,7 +319,7 @@ def _mark_agnocast_edges(graph: nx.MultiDiGraph,
     topic_agnocast_subs[topic] = sub_nodes
 
   for edge in graph.edges:
-    # Skip edges already marked (e.g. newly added ③ edges)
+    # Skip edges already marked (e.g. newly added agnocast edges)
     if 'is_agnocast' in graph.edges[edge]:
       continue
 
@@ -342,8 +342,8 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
              ) -> nx.MultiDiGraph:
   """Set ``is_agnocast_node`` (bool) on every node.
 
-  ``is_agnocast_node`` is True for ③ nodes (agnocast::Node),
-  False for all others (① rclcpp-only nodes).
+  ``is_agnocast_node`` is True for agnocast::Node nodes,
+  False for all others (rclcpp-only nodes).
   """
   if agnocast_only_nodes is not None:
     quoted_agnocast_nodes = {_quote_name(n) for n in agnocast_only_nodes}
@@ -359,7 +359,7 @@ def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
 def _has_agnocast_attributes(graph: nx.MultiDiGraph) -> bool:
   """Return True if the graph already has Agnocast attributes from a saved dot.
 
-  Checks whether at least one node carries ``agnocast_node_type``, which is
+  Checks whether at least one node carries ``is_agnocast_node``, which is
   set only by ``extend_agnocast_runtime()`` or ``extend_agnocast()``.
   When True, the dot was saved with Agnocast info and CLI queries can be skipped.
   """
@@ -384,14 +384,14 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   """Extend graph with Agnocast attributes from runtime CLI.
 
   Processing order:
-    1. ``ros2 node list_agnocast``            — identify ③ nodes
+    1. ``ros2 node list_agnocast``            — identify agnocast::Node nodes
     2. ``ros2 topic list_agnocast`` +
        ``ros2 topic info_agnocast -v -d`` (×N) — all endpoint information
     3. Build node→topics map by reverse lookup of ``topic_endpoints`` (in-memory)
-    4. Add ③ nodes and their edges to the graph
+    4. Add agnocast::Node nodes and their edges to the graph
     5. Mark ``is_agnocast`` on existing edges
     6. Detect bridge nodes and synthesize direct edges
-    7. Mark ``agnocast_node_type`` on nodes
+    7. Mark ``is_agnocast_node`` on nodes
 
   On CLI failure, returns the graph with safe default attributes
   (graceful degradation).
@@ -432,7 +432,7 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
 
   # Reverse the topic→endpoints map into a node→(pub_topics, sub_topics) map.
   # This replaces ``ros2 node info_agnocast`` × M queries with in-memory work.
-  # Only ③ nodes that are not bridge nodes are included, matching the
+  # Only agnocast::Node nodes that are not bridge nodes are included, matching the
   # filtering previously done in the per-node loop.
   node_topics: dict[str, tuple[set[str], set[str]]] = defaultdict(
       lambda: (set(), set()))
@@ -448,7 +448,7 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
 
   # Convert to a regular dict so downstream code sees the same type as before.
   node_topics = dict(node_topics)
-  logger.debug('Built node_topics for %d ③ nodes via reverse lookup',
+  logger.debug('Built node_topics for %d agnocast nodes via reverse lookup',
                len(node_topics))
 
   graph = _add_agnocast_nodes(graph, agnocast_only_nodes, node_topics,
@@ -456,8 +456,8 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
 
   graph = _mark_agnocast_edges(graph, topic_endpoints)
 
-  # mark_bridge_nodes must run before _mark_agnocast_nodes so is_bridged info is available.
-  # upgrade_existing_edges=True: Step 4 may have already added ③ edges on the same path.
+  # mark_bridge_nodes must run before synthesize_bridge_direct_edges (is_bridge_node required).
+  # upgrade_existing_edges=True: Step 4 may have already added agnocast edges on the same path.
   mark_bridge_nodes(graph)
   synthesize_bridge_direct_edges(graph, upgrade_existing_edges=True)
 

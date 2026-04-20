@@ -107,7 +107,7 @@ def extend_agnocast(filename: str,
   mark_bridge_nodes(graph)
 
   # Step 4: Synthesize direct edges for bridge bypass
-  # upgrade_existing_edges=False: YAML-derived edges only, no prior ③ edges exist
+  # upgrade_existing_edges=False: YAML-derived edges only, no prior agnocast edges exist
   synthesize_bridge_direct_edges(graph, upgrade_existing_edges=False)
 
   # Log summary
