@@ -76,12 +76,14 @@ class GraphViewModel:
     # Agnocast colors
     self.color_agnocast_edge = [0, 255, 255]       # bright cyan for agnocast edges
     self.color_agnocast_node = [0, 120, 120]        # teal background for agnocast nodes
-    self.color_bridge_node = [220, 130, 20]          # orange for bridge nodes
+    self.color_bridge_node = [220, 130, 20]          # orange for bridge nodes (title bar)
+    self.color_bridge_node_bg = [80, 45, 5]           # dark orange for bridge node background
     self.color_bridge_edge = [220, 130, 20]          # orange for bridge edges
     if app_setting['bg_white']:
       self.color_agnocast_edge = [0, 150, 150]
       self.color_agnocast_node = [180, 230, 230]
       self.color_bridge_node = [220, 150, 50]
+      self.color_bridge_node_bg = [200, 170, 120]
       self.color_bridge_edge = [220, 150, 50]
 
   def get_graph(self) -> nx.DiGraph:
@@ -432,7 +434,7 @@ class GraphViewModel:
     node_data = graph.nodes[node_name]
 
     if node_data.get('is_bridge_node', False):
-      return self.color_bridge_node
+      return self.color_bridge_node_bg
 
     if self.agnocast_display['show_agnocast']:
       if node_data.get('is_agnocast_node', False):

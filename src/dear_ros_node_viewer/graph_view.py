@@ -42,6 +42,12 @@ class GraphView:
     self.dpg_id_agnocast: int = -1
     self.dpg_id_bridge: int = -1
 
+    # Agnocast list panel
+    self.dpg_id_agnocast_panel: int = -1
+    self.dpg_id_agnocast_panel_content: int = -1
+    self._dpg_panel_selectable_ids: list[int] = []  # all selectables for single-select
+    self._dpg_panel_bridge_label_ids: list[int] = []  # bridge section widgets to show/hide
+
     self.color_node_selected = [0, 0, 64]
     self.color_node_bar = [32, 32, 32]
     self.color_node_back = [64, 64, 64]
@@ -66,11 +72,12 @@ class GraphView:
         pos=[0, 0],
         width=window_width, height=window_height,
         no_collapse=True, no_title_bar=True, no_move=True,
-        no_resize=True) as self.dpg_window_id:
+        no_resize=True, no_bring_to_front_on_focus=True) as self.dpg_window_id:
 
       self.add_menu_in_dpg()
 
     self._setup_mermaid_export_dialog()
+    self._setup_agnocast_panel()  # must be after main window
     self.graph_viewmodel.load_graph(graph_filename)
     self.update_node_editor(self.app_setting['bg_white'], display_cb_detail)
 
@@ -111,6 +118,10 @@ class GraphView:
     for path_name, _ in self.graph_viewmodel.graph_manager.caret_path_dict.items():
       dpg.add_menu_item(label=path_name, callback=self._cb_menu_caret_path,
                 parent=self.dpg_id_caret_path)
+
+    # Refresh agnocast panel if visible
+    if self.dpg_id_agnocast_panel != -1 and dpg.is_item_visible(self.dpg_id_agnocast_panel):
+      self._refresh_agnocast_panel()
 
   def add_menu_in_dpg(self):
     """ Add menu bar """
@@ -436,6 +447,14 @@ class GraphView:
     label = 'Hide Agnocast' if not current else 'Show Agnocast'
     dpg.set_item_label(sender, label)
 
+    # Show/hide agnocast panel in sync
+    if self.dpg_id_agnocast_panel != -1:
+      if not current:
+        self._refresh_agnocast_panel()
+        dpg.show_item(self.dpg_id_agnocast_panel)
+      else:
+        dpg.hide_item(self.dpg_id_agnocast_panel)
+
   def _cb_menu_bridge_toggle(self, sender, app_data, user_data):
     """Toggle bridge node/edge visibility"""
     if not self.graph_viewmodel.has_bridge_nodes():
@@ -445,6 +464,146 @@ class GraphView:
     self.graph_viewmodel.toggle_bridge_display(not current)
     label = 'Hide Bridge' if not current else 'Show Bridge'
     dpg.set_item_label(sender, label)
+
+    # Refresh panel bridge section if visible
+    if self.dpg_id_agnocast_panel != -1 and dpg.is_item_shown(self.dpg_id_agnocast_panel):
+      self._refresh_agnocast_panel()
+
+  def _setup_agnocast_panel(self):
+    """Create the Agnocast list panel window (hidden by default)"""
+    with dpg.window(
+        label='Agnocast List',
+        pos=[10, 30],
+        width=260,
+        height=500,
+        show=False,
+        no_close=True,
+        no_collapse=True,
+        no_move=True,
+        no_title_bar=True,
+        no_focus_on_appearing=True) as self.dpg_id_agnocast_panel:
+      dpg.add_text('Agnocast Nodes', color=[0, 255, 255])
+      dpg.add_separator()
+      self._dpg_panel_nodes = dpg.add_child_window(height=140, border=True)
+      dpg.add_separator()
+      dpg.add_text('Agnocast Topics (Edges)', color=[0, 200, 200])
+      dpg.add_separator()
+      self._dpg_panel_edges = dpg.add_child_window(height=140, border=True)
+      dpg.add_separator()
+      self._dpg_panel_bridge_label_ids = [
+        dpg.add_text('Bridge Nodes', color=[220, 130, 20]),
+        dpg.add_separator(),
+        dpg.add_child_window(height=100, border=True),
+      ]
+      self._dpg_panel_bridges = self._dpg_panel_bridge_label_ids[2]
+    logger.debug('agnocast_panel created id=%s nodes=%s edges=%s bridges=%s',
+      self.dpg_id_agnocast_panel,
+      self._dpg_panel_nodes,
+      self._dpg_panel_edges,
+      self._dpg_panel_bridges)
+
+  def _refresh_agnocast_panel(self):
+    """Rebuild the list panel content from the current graph"""
+    graph = self.graph_viewmodel.get_graph()
+    self._dpg_panel_selectable_ids.clear()
+
+    # --- Agnocast nodes ---
+    dpg.delete_item(self._dpg_panel_nodes, children_only=True)
+    agnocast_nodes = [
+      n for n in graph.nodes
+      if graph.nodes[n].get('is_agnocast_node', False)
+    ]
+    if agnocast_nodes:
+      for node_name in agnocast_nodes:
+        short = '/' + node_name.strip('"').split('/')[-1]
+        sel_id = dpg.add_selectable(
+          label=short,
+          parent=self._dpg_panel_nodes,
+          callback=self._cb_panel_jump_to_node,
+          user_data=node_name)
+        self._dpg_panel_selectable_ids.append(sel_id)
+    else:
+      dpg.add_text('(none)', parent=self._dpg_panel_nodes, color=[128, 128, 128])
+
+    # --- Agnocast edges (unique topic labels) ---
+    dpg.delete_item(self._dpg_panel_edges, children_only=True)
+    agnocast_topics = []
+    agnocast_edge_map = {}
+    for edge in graph.edges:
+      edge_data = graph.edges[edge]
+      if edge_data.get('is_agnocast', False):
+        label = edge_data.get('label', str(edge))
+        label = label.replace('_agnocast', '')
+        if label not in agnocast_topics:
+          agnocast_topics.append(label)
+          agnocast_edge_map[label] = edge[0]
+    if agnocast_topics:
+      for topic in sorted(agnocast_topics):
+        short = '/' + topic.strip('"').split('/')[-1]
+        sel_id = dpg.add_selectable(
+          label=short,
+          parent=self._dpg_panel_edges,
+          callback=self._cb_panel_jump_to_node,
+          user_data=agnocast_edge_map[topic])
+        self._dpg_panel_selectable_ids.append(sel_id)
+    else:
+      dpg.add_text('(none)', parent=self._dpg_panel_edges, color=[128, 128, 128])
+
+    # --- Bridge nodes (show only when show_bridge is ON) ---
+    show_bridge = self.graph_viewmodel.agnocast_display['show_bridge']
+    for item_id in self._dpg_panel_bridge_label_ids:
+      if show_bridge:
+        dpg.show_item(item_id)
+      else:
+        dpg.hide_item(item_id)
+
+    dpg.delete_item(self._dpg_panel_bridges, children_only=True)
+    if show_bridge:
+      bridge_nodes = [
+        n for n in graph.nodes
+        if graph.nodes[n].get('is_bridge_node', False)
+      ]
+      if bridge_nodes:
+        for node_name in bridge_nodes:
+          short = '/' + node_name.strip('"').split('/')[-1]
+          sel_id = dpg.add_selectable(
+            label=short,
+            parent=self._dpg_panel_bridges,
+            callback=self._cb_panel_jump_to_node,
+            user_data=node_name)
+          self._dpg_panel_selectable_ids.append(sel_id)
+      else:
+        dpg.add_text('(none)', parent=self._dpg_panel_bridges, color=[128, 128, 128])
+
+  def _cb_panel_jump_to_node(self, sender, app_data, user_data):
+    """Move target node to center. Deselect all other selectables (single-select)."""
+    # Enforce single selection
+    for sel_id in self._dpg_panel_selectable_ids:
+      if sel_id != sender:
+        dpg.set_value(sel_id, False)
+
+    node_name = user_data
+    target_id = self.graph_viewmodel.dpg_bind['node_id'].get(node_name)
+    if target_id is None:
+      return
+
+    # Screen position of the target node
+    target_screen = dpg.get_item_rect_min(target_id)
+
+    # Screen center of the visible area (exclude panel on the left)
+    window_w = dpg.get_item_width(self.dpg_window_id)
+    window_h = dpg.get_item_height(self.dpg_window_id)
+    panel_w = 260 + 10  # panel width + left margin
+    center_screen_x = panel_w + (window_w - panel_w) // 2
+    center_screen_y = window_h // 2
+
+    # Delta in screen space = delta in canvas space (zoom is uniform scaling)
+    dx = center_screen_x - target_screen[0]
+    dy = center_screen_y - target_screen[1]
+
+    for nid in self.graph_viewmodel.dpg_bind['node_id'].values():
+      pos = dpg.get_item_pos(nid)
+      dpg.set_item_pos(nid, [pos[0] + dx, pos[1] + dy])
 
   def _setup_mermaid_export_dialog(self):
     """ Setup folder selection dialog for Mermaid export """
