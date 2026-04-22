@@ -278,6 +278,24 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
     _add_edges_for_node(graph, quoted_name,
                         pub_topics, sub_topics,
                         dict(topic_to_publishers), dict(topic_to_subscribers))
+    
+  if topic_endpoints is not None:
+    for topic, endpoints in topic_endpoints.items():
+      for pub_ep in endpoints.agnocast_pubs:
+        quoted_pub = _quote_name(pub_ep.node_name)
+        if quoted_pub not in graph.nodes:
+          continue
+        for sub_ep in endpoints.agnocast_subs:
+          quoted_sub = _quote_name(sub_ep.node_name)
+          if quoted_sub not in graph.nodes:
+            continue
+          if quoted_pub == quoted_sub:
+            continue
+          if not _edge_exists(graph, quoted_pub, quoted_sub, topic):
+            graph.add_edge(quoted_pub, quoted_sub,
+                           label=topic, is_agnocast=True)
+            logger.debug('Added agnocast edge (existing node): %s -> %s [%s]',
+                         quoted_pub, quoted_sub, topic)
 
   return graph
 
