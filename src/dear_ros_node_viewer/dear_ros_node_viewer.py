@@ -94,12 +94,19 @@ def load_setting_json(graph_file, displace_new_node):
       setting = json.load(f_setting)
     app_setting = setting['app_setting']
     group_setting = setting['group_setting']
+    # agnocast_color_setting is an optional field.
+    # If the key is absent, pass an empty dict so that graph_viewmodel
+    # falls back to its hardcoded defaults (for backward compatibility).
+    app_setting['agnocast_color_setting'] = setting.get('agnocast_color_setting', {})
   else:
     # Incase, default setting file was not found, too
     logger.info('Unable to find %s. Use fixed default setting', setting_file)
     app_setting = {
       "window_size": [1920, 1080],
-      "font": "font/roboto/Roboto-Medium.ttf"
+      "font": "font/roboto/Roboto-Medium.ttf",
+      # Pass an empty dict so that graph_viewmodel falls back to its
+      # hardcoded defaults (for backward compatibility).
+      "agnocast_color_setting": {}
     }
     group_setting = {
       "__others__": {
@@ -180,6 +187,10 @@ def main():
         # For yello color
         bright_bias = 80
       setting['color'] = [val + bright_bias for val in setting['color']]
+    # make agnocast colors bright
+    agnocast_bias = 100
+    for key, val in app_setting.get('agnocast_color_setting', {}).items():
+      app_setting['agnocast_color_setting'][key] = [min(v + agnocast_bias, 255) for v in val]
 
   graph_filename = args.graph_file
 
