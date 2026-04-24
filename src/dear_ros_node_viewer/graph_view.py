@@ -494,6 +494,19 @@ class GraphView:
         dpg.add_theme_color(dpg.mvThemeCol_Separator,      (160, 160, 160))
         dpg.add_theme_color(dpg.mvNodeCol_GridBackground,  (255, 255, 255), category=dpg.mvThemeCat_Nodes)
         dpg.add_theme_color(dpg.mvNodeCol_GridLine,        (220, 220, 220), category=dpg.mvThemeCat_Nodes)
+        # minimap (alpha values match dark mode transparency)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapBackground,             (230, 230, 230, 100), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapBackgroundHovered,      (210, 210, 210, 150), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapOutline,                (160, 160, 160, 150), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapOutlineHovered,         (120, 120, 120, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeBackground,         (160, 160, 160, 150), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeBackgroundHovered,  (140, 140, 140, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeBackgroundSelected, (140, 140, 200, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeOutline,            (100, 100, 100, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapLink,                   (  0, 150, 150, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapLinkSelected,           ( 80,  80, 180, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapCanvas,                 (200, 200, 200,  80), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapCanvasOutline,          (160, 160, 160, 150), category=dpg.mvThemeCat_Nodes)
     # Save theme ID so _setup_agnocast_panel() can bind it explicitly.
     # dpg.bind_theme() alone does not propagate to windows created after this call.
     self._global_white_theme_id = theme_id
