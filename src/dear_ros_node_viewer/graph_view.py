@@ -63,6 +63,9 @@ class GraphView:
       title='Dear RosNodeViewer', width=window_width, height=window_height,)
     dpg.setup_dearpygui()
 
+    if self.app_setting['bg_white']:
+      self._apply_global_white_theme()
+
     self._make_font_table(self.app_setting['font'])
     with dpg.handler_registry():
       dpg.add_mouse_wheel_handler(callback=self._cb_wheel)
@@ -78,6 +81,11 @@ class GraphView:
 
     self._setup_mermaid_export_dialog()
     self._setup_agnocast_panel()  # must be after main window
+
+    # Explicitly bind the global white theme to the main window so that the
+    # menubar background is also covered (dpg.bind_theme() alone is not enough).
+    if self.app_setting['bg_white'] and hasattr(self, '_global_white_theme_id'):
+      dpg.bind_item_theme(self.dpg_window_id, self._global_white_theme_id)
     self.graph_viewmodel.load_graph(graph_filename)
     self.update_node_editor(self.app_setting['bg_white'], display_cb_detail)
 
@@ -102,15 +110,12 @@ class GraphView:
         self.add_node_in_dpg(display_cb_detail)
         self.add_link_in_dpg()
 
-    if bg_white:
-      with dpg.theme() as ne_white_theme:
-        # with dpg.theme_component(dpg.mvNodeEditor):
-        with dpg.theme_component(dpg.mvAll):
-          dpg.add_theme_color(dpg.mvNodeCol_GridBackground, (255, 255, 255), category=dpg.mvThemeCat_Nodes)
-          dpg.add_theme_color(dpg.mvNodeCol_GridLine, (255, 255, 255), category=dpg.mvThemeCat_Nodes)
-          dpg.add_theme_color(dpg.mvNodeCol_NodeBackground, (0, 0, 0), category=dpg.mvThemeCol_Text)
-      # dpg.bind_item_theme(self.dpg_id_editor, ne_white_theme)
-      dpg.bind_theme(ne_white_theme)
+    if bg_white and hasattr(self, '_global_white_theme_id'):
+      # Re-bind the global white theme to main window and editor.
+      # This is needed because update_node_editor() recreates the editor item,
+      # which loses any previously bound theme.
+      dpg.bind_item_theme(self.dpg_window_id, self._global_white_theme_id)
+      dpg.bind_item_theme(self.dpg_id_editor,  self._global_white_theme_id)
 
     self.graph_viewmodel.load_layout()
 
@@ -476,6 +481,44 @@ class GraphView:
     if self.dpg_id_agnocast_panel != -1 and dpg.is_item_shown(self.dpg_id_agnocast_panel):
       self._refresh_agnocast_panel()
 
+  def _apply_global_white_theme(self):
+    """Apply a light global theme for bg_white mode (menubar, windows, text)."""
+    with dpg.theme() as theme_id:
+      with dpg.theme_component(dpg.mvAll):
+        dpg.add_theme_color(dpg.mvThemeCol_WindowBg,       (240, 240, 240))
+        dpg.add_theme_color(dpg.mvThemeCol_ChildBg,        (225, 225, 225))
+        dpg.add_theme_color(dpg.mvThemeCol_MenuBarBg,      (210, 210, 210))
+        dpg.add_theme_color(dpg.mvThemeCol_PopupBg,        (240, 240, 240))
+        dpg.add_theme_color(dpg.mvThemeCol_Text,           (20,  20,  20))
+        dpg.add_theme_color(dpg.mvThemeCol_Header,         (180, 210, 230))
+        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered,  (160, 195, 220))
+        dpg.add_theme_color(dpg.mvThemeCol_HeaderActive,   (140, 180, 210))
+        dpg.add_theme_color(dpg.mvThemeCol_FrameBg,        (210, 210, 210))
+        dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, (195, 195, 195))
+        dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg,    (220, 220, 220))
+        dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab,  (160, 160, 160))
+        dpg.add_theme_color(dpg.mvThemeCol_Border,         (160, 160, 160))
+        dpg.add_theme_color(dpg.mvThemeCol_Separator,      (160, 160, 160))
+        dpg.add_theme_color(dpg.mvNodeCol_GridBackground,  (255, 255, 255), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodeCol_GridLine,        (220, 220, 220), category=dpg.mvThemeCat_Nodes)
+        # minimap (alpha values match dark mode transparency)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapBackground,             (230, 230, 230, 100), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapBackgroundHovered,      (210, 210, 210, 150), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapOutline,                (160, 160, 160, 150), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapOutlineHovered,         (120, 120, 120, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeBackground,         (160, 160, 160, 150), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeBackgroundHovered,  (140, 140, 140, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeBackgroundSelected, (140, 140, 200, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapNodeOutline,            (100, 100, 100, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapLink,                   (  0, 150, 150, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapLinkSelected,           ( 80,  80, 180, 200), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapCanvas,                 (200, 200, 200,  80), category=dpg.mvThemeCat_Nodes)
+        dpg.add_theme_color(dpg.mvNodesCol_MiniMapCanvasOutline,          (160, 160, 160, 150), category=dpg.mvThemeCat_Nodes)
+    # Save theme ID so _setup_agnocast_panel() can bind it explicitly.
+    # dpg.bind_theme() alone does not propagate to windows created after this call.
+    self._global_white_theme_id = theme_id
+    dpg.bind_theme(theme_id)
+
   def _setup_agnocast_panel(self):
     """Create the Agnocast list panel window (hidden by default)"""
     with dpg.window(
@@ -489,20 +532,30 @@ class GraphView:
         no_move=True,
         no_title_bar=True,
         no_focus_on_appearing=True) as self.dpg_id_agnocast_panel:
-      dpg.add_text('Agnocast Nodes', color=[0, 255, 255])
+      dpg.add_text('Agnocast Nodes', color=self.graph_viewmodel.color_agnocast_edge)
       dpg.add_separator()
       self._dpg_panel_nodes = dpg.add_child_window(height=140, border=True)
       dpg.add_separator()
-      dpg.add_text('Agnocast Topics (Edges)', color=[0, 200, 200])
+      dpg.add_text('Agnocast Topics (Edges)', color=self.graph_viewmodel.color_agnocast_edge)
       dpg.add_separator()
       self._dpg_panel_edges = dpg.add_child_window(height=140, border=True)
       dpg.add_separator()
       self._dpg_panel_bridge_label_ids = [
-        dpg.add_text('Bridge Nodes', color=[220, 130, 20]),
+        dpg.add_text('Bridge Nodes', color=self.graph_viewmodel.color_bridge_node),
         dpg.add_separator(),
         dpg.add_child_window(height=100, border=True),
       ]
       self._dpg_panel_bridges = self._dpg_panel_bridge_label_ids[2]
+
+    # In bg_white mode, dpg.bind_theme() does not propagate to windows created
+    # after the call, so we explicitly bind the global theme to this panel and
+    # its child windows here.
+    if self.app_setting['bg_white'] and hasattr(self, '_global_white_theme_id'):
+      dpg.bind_item_theme(self.dpg_id_agnocast_panel, self._global_white_theme_id)
+      dpg.bind_item_theme(self._dpg_panel_nodes,      self._global_white_theme_id)
+      dpg.bind_item_theme(self._dpg_panel_edges,      self._global_white_theme_id)
+      dpg.bind_item_theme(self._dpg_panel_bridges,    self._global_white_theme_id)
+
     logger.debug('agnocast_panel created id=%s nodes=%s edges=%s bridges=%s',
       self.dpg_id_agnocast_panel,
       self._dpg_panel_nodes,

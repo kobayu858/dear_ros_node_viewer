@@ -14,6 +14,13 @@
       "/diagnostics"
     ]
   },
+  "agnocast_color_setting": {
+    "agnocast_edge":                  [0, 255, 255],
+    "agnocast_node_bg":               [0, 120, 120],
+    "bridge_node_title":              [220, 130, 20],
+    "bridge_node_bg":                 [80, 45, 5],
+    "bridge_edge":                    [220, 130, 20]
+  },
   "group_setting": {
     "/sensing/": {
       "direction": "horizontal",
