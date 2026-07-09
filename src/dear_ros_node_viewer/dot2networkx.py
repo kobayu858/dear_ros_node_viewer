@@ -80,6 +80,11 @@ def dot2networkx_nodetopic(graph_org: nx.classes.digraph.DiGraph,
   # "/topic_0": ["/node_1", ], <- subscribers of /topic_0 are ["/node_1", ] #
   topic_sub_dict: dict[str, list[str]] = {}
 
+  # Node-to-node edges (both endpoints are 'ellipse' nodes, not a topic 'box').
+  # save_agnocast_dot() writes edges in this form, bypassing the topic/box nodes
+  # rqt_graph uses, so they never appear in topic_pub_dict/topic_sub_dict above.
+  direct_edges: list[tuple[str, str, dict]] = []
+
   for edge in graph_org.edges:
     src = graph_org.nodes[edge[0]]
     dst = graph_org.nodes[edge[1]]
@@ -100,6 +105,8 @@ def dot2networkx_nodetopic(graph_org: nx.classes.digraph.DiGraph,
         topic_sub_dict[src_name].append(dst_name)
       else:
         topic_sub_dict[src_name] = [dst_name]
+    elif src_is_node is True and dst_is_node is True:
+      direct_edges.append((src_name, dst_name, graph_org.edges[edge]))
 
   graph = make_graph_from_topic_association(topic_pub_dict, topic_sub_dict,
                        display_unconnected_topics)
@@ -109,6 +116,40 @@ def dot2networkx_nodetopic(graph_org: nx.classes.digraph.DiGraph,
       node_data = graph_org.nodes[node_id]
       if 'label' in node_data and node_data.get('shape') == 'ellipse':
         graph.add_node(node_data['label'])
+
+  # Restore Agnocast node attributes (present when loaded from an Agnocast-annotated dot)
+  for node_id in graph_org.nodes:
+    node_data = graph_org.nodes[node_id]
+    if node_data.get('shape') != 'ellipse' or 'label' not in node_data:
+      continue
+    agnocast_node_attrs = {
+      attr: parse_dot_bool_attr(attr, node_data[attr])
+      for attr in AGNOCAST_NODE_ATTRS
+      if attr in node_data
+    }
+    if agnocast_node_attrs:
+      graph.add_node(node_data['label'], **agnocast_node_attrs)
+
+  # Restore Agnocast edge attributes from the node-to-node edges collected above.
+  # An equivalent edge may already exist (reconstructed from topic association);
+  # merge into it instead of duplicating when so, otherwise add it as a new edge
+  # (e.g. a bridge edge whose Agnocast-only endpoint never appears via a topic node).
+  for src_name, dst_name, edge_data in direct_edges:
+    agnocast_edge_attrs = {
+      attr: parse_dot_bool_attr(attr, edge_data[attr])
+      for attr in AGNOCAST_EDGE_ATTRS
+      if attr in edge_data
+    }
+    label = edge_data.get('label', '')
+    existing_key = None
+    for key, data in graph.get_edge_data(src_name, dst_name, default={}).items():
+      if data.get('label', '') == label:
+        existing_key = key
+        break
+    if existing_key is not None:
+      graph.edges[src_name, dst_name, existing_key].update(agnocast_edge_attrs)
+    else:
+      graph.add_edge(src_name, dst_name, label=label, **agnocast_edge_attrs)
 
   return graph
 
