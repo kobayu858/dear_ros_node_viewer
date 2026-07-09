@@ -284,12 +284,12 @@ def _add_agnocast_nodes(graph: nx.MultiDiGraph,
       for pub_ep in endpoints.agnocast_pubs:
         quoted_pub = _quote_name(pub_ep.node_name)
         if quoted_pub not in graph.nodes:
-          graph.add_node(quoted_pub)  # ← continueからadd_nodeに変更
+          graph.add_node(quoted_pub)
           logger.debug('Added rclcpp agnocast node: %s', pub_ep.node_name)
         for sub_ep in endpoints.agnocast_subs:
           quoted_sub = _quote_name(sub_ep.node_name)
           if quoted_sub not in graph.nodes:
-            graph.add_node(quoted_sub)  # ← continueからadd_nodeに変更
+            graph.add_node(quoted_sub)
             logger.debug('Added rclcpp agnocast node: %s', sub_ep.node_name)
           if quoted_pub == quoted_sub:
             continue
