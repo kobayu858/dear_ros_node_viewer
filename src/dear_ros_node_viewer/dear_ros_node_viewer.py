@@ -28,6 +28,8 @@ from .graph_view import GraphView
 from .ros2networkx import Ros2Networkx
 from .dot2networkx import dot2networkx
 from .mermaid_exporter import export_to_mermaid_html
+from .agnocast_extend_runtime import extend_agnocast_runtime
+from .graph_manager import save_agnocast_dot
 
 
 logger = LoggerFactory.create(__name__)
@@ -66,6 +68,9 @@ def save_ros2dot(save_path: Path, display_unconnected_topics=False):
   ros2networkx.shutdown()
   graph = dot2networkx(dot_filename, display_unconnected_nodes=True,
              display_unconnected_topics=display_unconnected_topics)
+  graph = extend_agnocast_runtime(graph)
+  if graph.graph.get('is_agnocast_environment', True):
+    save_agnocast_dot(graph, dot_path=str(dot_filename))
   export_to_mermaid_html(graph, save_path.joinpath('node_diagram.mermaid.html'), 'ROS Node Graph')
 
 
