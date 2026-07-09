@@ -153,7 +153,8 @@ class GraphManager:
   def load_graph_from_caret(self, filename: str, target_path: str = 'all_graph'):
     """ load_graph_from_caret """
     self.graph = caret2networkx(filename, target_path,
-                  self.app_setting['display_unconnected_nodes'])
+                  self.app_setting['display_unconnected_nodes'],
+                  self.app_setting['display_unconnected_topics'])
     self.graph = extend_callback_group(filename, self.graph)
     self.graph = extend_agnocast(filename, self.graph)
     self.load_graph_postprocess(filename)
@@ -161,7 +162,8 @@ class GraphManager:
 
   def load_graph_from_dot(self, filename: str, is_dynamic_load: bool = False):
     """ load_graph_from_dot """
-    self.graph = dot2networkx(filename, self.app_setting['display_unconnected_nodes'])
+    self.graph = dot2networkx(filename, self.app_setting['display_unconnected_nodes'],
+                  self.app_setting['display_unconnected_topics'])
 
     if is_dynamic_load:
       self.graph = extend_agnocast_runtime(self.graph)
@@ -206,7 +208,11 @@ class GraphManager:
     logger.info('%s nodes are removed by filter', len(remove_node_list))
 
     if not self.app_setting['display_unconnected_nodes']:
-      isolated_node_list = list(nx.isolates(self.graph))
+      isolated_node_list = [
+        n for n in nx.isolates(self.graph)
+        if not self.graph.nodes[n].get('pub_only_topics')
+        and not self.graph.nodes[n].get('sub_only_topics')
+      ]
       logger.info('%s nodes are removed due to isolated', len(isolated_node_list))
       self.graph.remove_nodes_from(isolated_node_list)
 
