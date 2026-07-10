@@ -61,7 +61,7 @@ def save_info(save_path: Path):
 
 
 def save_ros2dot(save_path: Path, display_unconnected_topics=False,
-         agnocast_max_workers=AGNOCAST_INFO_MAX_WORKERS):
+         agnocast_max_workers=AGNOCAST_INFO_MAX_WORKERS, disable_agnocast=False):
   """save dot file for the current ROS 2 graph"""
   dot_filename = save_path.joinpath('node_diagram.dot')
   ros2networkx = Ros2Networkx()
@@ -69,9 +69,10 @@ def save_ros2dot(save_path: Path, display_unconnected_topics=False,
   ros2networkx.shutdown()
   graph = dot2networkx(dot_filename, display_unconnected_nodes=True,
              display_unconnected_topics=display_unconnected_topics)
-  graph = extend_agnocast_runtime(graph, max_workers=agnocast_max_workers)
-  if graph.graph.get('is_agnocast_environment', True):
-    save_agnocast_dot(graph, dot_path=str(dot_filename))
+  if not disable_agnocast:
+    graph = extend_agnocast_runtime(graph, max_workers=agnocast_max_workers)
+    if graph.graph.get('is_agnocast_environment', True):
+      save_agnocast_dot(graph, dot_path=str(dot_filename))
   export_to_mermaid_html(graph, save_path.joinpath('node_diagram.mermaid.html'), 'ROS Node Graph')
 
 
@@ -153,6 +154,8 @@ def parse_args():
   parser.add_argument('--agnocast_max_workers', type=int, default=AGNOCAST_INFO_MAX_WORKERS,
             help='Max concurrent "ros2 topic info_agnocast" CLI calls '
                f'(default={AGNOCAST_INFO_MAX_WORKERS})')
+  parser.add_argument('--disable_agnocast', type=strtobool, default=False,
+            help='Skip Agnocast querying/annotation entirely')
   args = parser.parse_args()
 
   logger.debug(f'args.graph_file = {args.graph_file}')
@@ -164,6 +167,7 @@ def parse_args():
   logger.debug(f'args.bg_white = {args.bg_white}')
   logger.debug(f'args.save_only = {args.save_only}')
   logger.debug(f'args.agnocast_max_workers = {args.agnocast_max_workers}')
+  logger.debug(f'args.disable_agnocast = {args.disable_agnocast}')
 
   return args
 
@@ -180,7 +184,8 @@ def main():
     Path.mkdir(save_path, exist_ok=True)
     save_info(save_path)
     save_ros2dot(save_path, args.display_unconnected_topics,
-           agnocast_max_workers=args.agnocast_max_workers)
+           agnocast_max_workers=args.agnocast_max_workers,
+           disable_agnocast=args.disable_agnocast)
     logger.info(f'save to {save_path}')
     return
 
@@ -196,6 +201,7 @@ def main():
   app_setting['display_unconnected_topics'] = args.display_unconnected_topics
   app_setting['bg_white'] = args.bg_white
   app_setting['agnocast_max_workers'] = args.agnocast_max_workers
+  app_setting['disable_agnocast'] = args.disable_agnocast
   if args.bg_white:
     # make component colors bright
     for _, setting in group_setting.items():

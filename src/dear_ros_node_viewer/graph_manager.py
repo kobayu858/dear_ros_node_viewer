@@ -156,7 +156,8 @@ class GraphManager:
                   self.app_setting['display_unconnected_nodes'],
                   self.app_setting['display_unconnected_topics'])
     self.graph = extend_callback_group(filename, self.graph)
-    self.graph = extend_agnocast(filename, self.graph)
+    if not self.app_setting.get('disable_agnocast', False):
+      self.graph = extend_agnocast(filename, self.graph)
     self.load_graph_postprocess(filename)
     self.caret_path_dict.update(get_path_dict(filename))
 
@@ -165,7 +166,7 @@ class GraphManager:
     self.graph = dot2networkx(filename, self.app_setting['display_unconnected_nodes'],
                   self.app_setting['display_unconnected_topics'])
 
-    if is_dynamic_load:
+    if is_dynamic_load and not self.app_setting.get('disable_agnocast', False):
       max_workers = self.app_setting.get('agnocast_max_workers', AGNOCAST_INFO_MAX_WORKERS)
       self.graph = extend_agnocast_runtime(self.graph, max_workers=max_workers)
       if self.graph.graph.get('is_agnocast_environment', True):
