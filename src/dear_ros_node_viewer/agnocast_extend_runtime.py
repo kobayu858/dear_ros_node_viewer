@@ -25,6 +25,7 @@ require zero changes.
 from __future__ import annotations
 import subprocess
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 import networkx as nx
 from .logger_factory import LoggerFactory
@@ -37,6 +38,13 @@ from .agnocast_extend_utils import (
 )
 
 logger = LoggerFactory.create(__name__)
+
+# Number of concurrent `ros2 topic info_agnocast` CLI calls.
+# Each call costs ~1-1.5s of wall time dominated by DDS discovery/rclpy
+# startup, not pure I/O wait, so pushing this too high risks discovery
+# traffic contention rather than a proportional speedup. 8 was chosen as
+# a balance between speedup and that risk (see PR discussion).
+AGNOCAST_INFO_MAX_WORKERS = 8
 
 
 @dataclass
@@ -148,24 +156,39 @@ def _fetch_node_list() -> set[str] | None:
   return _parse_node_list_agnocast(output)
 
 
+def _fetch_topic_info(topic: str) -> tuple[str, TopicEndpoints] | None:
+  """Query and parse Agnocast endpoint info for a single topic."""
+  output = _run_agnocast_command(
+    ['ros2', 'topic', 'info_agnocast', '-v', '-d', topic]
+  )
+  if output is None:
+    return None
+  return topic, _parse_single_topic_info(output)
+
+
 def _fetch_all_topic_info() -> dict[str, TopicEndpoints] | None:
   """Execute ``ros2 topic info_agnocast -v`` per topic and return parsed result.
 
   Queries each Agnocast topic individually with ``-v`` to obtain
-  per-node endpoint information.
+  per-node endpoint information. Queries run concurrently (see
+  ``AGNOCAST_INFO_MAX_WORKERS``) since each is a separate ``ros2`` CLI
+  process and the calls are independent of each other.
   """
   topic_list_output = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
   if topic_list_output is None:
     return None
 
   agnocast_topics = _parse_topic_list_agnocast(topic_list_output)
+  if not agnocast_topics:
+    return None
+
   all_info: dict[str, TopicEndpoints] = {}
-  for topic in agnocast_topics:
-    output = _run_agnocast_command(
-      ['ros2', 'topic', 'info_agnocast', '-v', '-d', topic]
-    )
-    if output is not None:
-      all_info[topic] = _parse_single_topic_info(output)
+  max_workers = min(AGNOCAST_INFO_MAX_WORKERS, len(agnocast_topics))
+  with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    for result in executor.map(_fetch_topic_info, agnocast_topics):
+      if result is not None:
+        topic, endpoints = result
+        all_info[topic] = endpoints
   return all_info if all_info else None
 
 
