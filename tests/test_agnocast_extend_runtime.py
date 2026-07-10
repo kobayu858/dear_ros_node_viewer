@@ -298,9 +298,9 @@ class TestMarkAgnocastNodes(unittest.TestCase):
     agnocast_only = {'/node_a'}  # ③ node
     g = runtime._mark_agnocast_nodes(g, agnocast_only)
 
-    self.assertEqual(g.nodes['"/node_a"']['agnocast_node_type'], 'agnocast_node')
-    self.assertEqual(g.nodes['"/node_b"']['agnocast_node_type'], 'rclcpp_with_agnocast')
-    self.assertEqual(g.nodes['"/node_c"']['agnocast_node_type'], 'rclcpp_only')
+    self.assertTrue(g.nodes['"/node_a"']['is_agnocast_node'])
+    self.assertFalse(g.nodes['"/node_b"']['is_agnocast_node'])
+    self.assertFalse(g.nodes['"/node_c"']['is_agnocast_node'])
 
   def test_no_node_type_when_agnocast_only_is_none(self):
     g = _make_simple_graph()
@@ -308,7 +308,7 @@ class TestMarkAgnocastNodes(unittest.TestCase):
       g.edges[edge]['is_agnocast'] = False
 
     g = runtime._mark_agnocast_nodes(g, None)
-    self.assertNotIn('agnocast_node_type', g.nodes['"/node_a"'])
+    self.assertFalse(g.nodes['"/node_a"']['is_agnocast_node'])
 
 
 class TestProcessBridgeNodes(unittest.TestCase):
@@ -474,7 +474,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
     self.assertIn('"/detector"', g.nodes)
 
     # Node types
-    self.assertEqual(g.nodes['"/detector"']['agnocast_node_type'], 'agnocast_node')
+    self.assertTrue(g.nodes['"/detector"']['is_agnocast_node'])
 
     # /topic_x edge should be agnocast
     for src, dst, key in g.edges:
@@ -491,7 +491,7 @@ class TestExtendAgnocastRuntimeIntegration(unittest.TestCase):
 
     # All defaults
     for node_name in g.nodes:
-      self.assertEqual(g.nodes[node_name]['agnocast_node_type'], 'rclcpp_only')
+      self.assertFalse(g.nodes[node_name]['is_agnocast_node'])
       self.assertFalse(g.nodes[node_name]['is_bridge_node'])
     for edge in g.edges:
       self.assertFalse(g.edges[edge]['is_agnocast'])
@@ -596,7 +596,7 @@ class TestHelpers(unittest.TestCase):
     g = _make_simple_graph()
     runtime._set_default_attributes(g)
     for node_name in g.nodes:
-      self.assertEqual(g.nodes[node_name]['agnocast_node_type'], 'rclcpp_only')
+      self.assertFalse(g.nodes[node_name]['is_agnocast_node'])
       self.assertFalse(g.nodes[node_name]['is_bridge_node'])
     for edge in g.edges:
       self.assertFalse(g.edges[edge]['is_agnocast'])

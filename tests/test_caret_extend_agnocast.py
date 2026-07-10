@@ -103,9 +103,9 @@ class TestMarkAgnocastNodeTypes:
 
   def test_node_type_classification(self, tmp_path):
     """
-    /node_a belongs to agnocast_only_* executor -> agnocast_node (③)
-    /node_b is in agnocast_* executor -> rclcpp_with_agnocast (②)
-    /node_c has no agnocast executor -> rclcpp_only (①)
+    /node_a belongs to agnocast_only_* executor -> is_agnocast_node=True
+    /node_b is only in a plain agnocast_* executor -> is_agnocast_node=False
+    /node_c has no agnocast executor -> is_agnocast_node=False
     """
     graph = make_graph_with_topics([
       ('/node_a', '/node_b', '/topic_agnocast'),
@@ -147,9 +147,9 @@ class TestMarkAgnocastNodeTypes:
 
     _mark_agnocast_node_types(graph, yaml_file)
 
-    assert graph.nodes['"/node_a"']['agnocast_node_type'] == 'agnocast_node'
-    assert graph.nodes['"/node_b"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
-    assert graph.nodes['"/node_c"']['agnocast_node_type'] == 'rclcpp_only'
+    assert graph.nodes['"/node_a"']['is_agnocast_node'] is True
+    assert graph.nodes['"/node_b"']['is_agnocast_node'] is False
+    assert graph.nodes['"/node_c"']['is_agnocast_node'] is False
 
   def test_empty_yaml(self, tmp_path):
     """Empty YAML should classify all nodes as rclcpp_only"""
@@ -162,9 +162,9 @@ class TestMarkAgnocastNodeTypes:
 
     _mark_agnocast_node_types(graph, yaml_file)
 
-    # No agnocast executors → all nodes are rclcpp_only
-    assert graph.nodes['"/node_a"']['agnocast_node_type'] == 'rclcpp_only'
-    assert graph.nodes['"/node_b"']['agnocast_node_type'] == 'rclcpp_only'
+    # No agnocast executors → no node is an Agnocast node
+    assert graph.nodes['"/node_a"']['is_agnocast_node'] is False
+    assert graph.nodes['"/node_b"']['is_agnocast_node'] is False
 
 
 # ===================================================================
@@ -187,9 +187,9 @@ class TestGracefulDegradation:
     for e in graph.edges:
       assert 'is_agnocast' in graph.edges[e]
 
-    # Nodes should NOT have agnocast_node_type (set only by _mark_agnocast_node_types)
+    # Nodes should NOT have is_agnocast_node (set only by _mark_agnocast_node_types)
     for n in graph.nodes:
-      assert 'agnocast_node_type' not in graph.nodes[n]
+      assert 'is_agnocast_node' not in graph.nodes[n]
 
 
 # ===================================================================
@@ -209,7 +209,7 @@ class TestExtendAgnocastIntegration:
     return yaml_file
 
   def test_full_pipeline_basic(self, tmp_path):
-    """Basic pipeline: agnocast edges marked, node types default to rclcpp_only when no executor YAML"""
+    """Basic pipeline: agnocast edges marked, nodes default to is_agnocast_node=False when no executor YAML"""
     yaml_file = self._make_minimal_yaml(tmp_path)
 
     graph = make_graph_with_topics([
@@ -227,13 +227,13 @@ class TestExtendAgnocastIntegration:
       else:
         assert result.edges[e]['is_agnocast'] is False
 
-    # No executor info in YAML → all nodes are rclcpp_only
-    assert result.nodes['"/tracker"']['agnocast_node_type'] == 'rclcpp_only'
-    assert result.nodes['"/planner"']['agnocast_node_type'] == 'rclcpp_only'
-    assert result.nodes['"/sensor"']['agnocast_node_type'] == 'rclcpp_only'
+    # No executor info in YAML → no node is an Agnocast node
+    assert result.nodes['"/tracker"']['is_agnocast_node'] is False
+    assert result.nodes['"/planner"']['is_agnocast_node'] is False
+    assert result.nodes['"/sensor"']['is_agnocast_node'] is False
 
   def test_full_pipeline_with_agnocast_only_executor(self, tmp_path):
-    """Pipeline with agnocast_only executor sets agnocast_node_type correctly"""
+    """Pipeline with agnocast_only executor sets is_agnocast_node correctly"""
     yaml_file = self._make_minimal_yaml(
       tmp_path,
       extra_nodes=[
@@ -269,9 +269,9 @@ class TestExtendAgnocastIntegration:
 
     result = extend_agnocast(yaml_file, graph)
 
-    assert result.nodes['"/tracker"']['agnocast_node_type'] == 'agnocast_node'
-    assert result.nodes['"/planner"']['agnocast_node_type'] == 'rclcpp_with_agnocast'
-    assert result.nodes['"/sensor"']['agnocast_node_type'] == 'rclcpp_only'
+    assert result.nodes['"/tracker"']['is_agnocast_node'] is True
+    assert result.nodes['"/planner"']['is_agnocast_node'] is False
+    assert result.nodes['"/sensor"']['is_agnocast_node'] is False
 
   def test_full_pipeline_with_bridge(self, tmp_path):
     """Test bridge node handling in full pipeline"""
