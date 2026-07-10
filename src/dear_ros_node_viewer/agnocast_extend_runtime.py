@@ -166,7 +166,16 @@ def _fetch_topic_info(topic: str) -> tuple[str, TopicEndpoints] | None:
   return topic, _parse_single_topic_info(output)
 
 
-def _fetch_all_topic_info(
+def _fetch_agnocast_topics() -> set[str] | None:
+  """Execute ``ros2 topic list_agnocast`` and return parsed topic names."""
+  output = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
+  if output is None:
+    return None
+  return _parse_topic_list_agnocast(output)
+
+
+def _fetch_topic_info_batch(
+    agnocast_topics: set[str] | None,
     max_workers: int = AGNOCAST_INFO_MAX_WORKERS
 ) -> dict[str, TopicEndpoints] | None:
   """Execute ``ros2 topic info_agnocast -v`` per topic and return parsed result.
@@ -176,11 +185,6 @@ def _fetch_all_topic_info(
   ``max_workers`` at once) since each is a separate ``ros2`` CLI process
   and the calls are independent of each other.
   """
-  topic_list_output = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
-  if topic_list_output is None:
-    return None
-
-  agnocast_topics = _parse_topic_list_agnocast(topic_list_output)
   if not agnocast_topics:
     return None
 
@@ -338,7 +342,7 @@ def _mark_agnocast_edges(graph: nx.MultiDiGraph,
   Parameters
   ----------
   topic_endpoints
-      Result of ``_fetch_all_topic_info()``.  If ``None``, all edges
+      Result of ``_fetch_topic_info_batch()``.  If ``None``, all edges
       that don't already have ``is_agnocast`` are set to ``False``.
   """
   if topic_endpoints is None:
@@ -464,18 +468,25 @@ def extend_agnocast_runtime(
     graph.graph['is_agnocast_environment'] = True
     return graph
 
-  node_list_result = _fetch_node_list()
+  # ros2 node list_agnocast and ros2 topic list_agnocast are independent
+  # CLI round-trips; run them concurrently instead of back-to-back.
+  with ThreadPoolExecutor(max_workers=2) as executor:
+    node_list_future = executor.submit(_fetch_node_list)
+    agnocast_topics_future = executor.submit(_fetch_agnocast_topics)
+    node_list_result = node_list_future.result()
+    agnocast_topics = agnocast_topics_future.result()
+
   if node_list_result is None:
     logger.info('Agnocast node list unavailable. Agnocast features disabled.')
     _set_default_attributes(graph)
     graph.graph['is_agnocast_environment'] = False
     return graph
-  
+
   graph.graph['is_agnocast_environment'] = True
 
   agnocast_only_nodes = node_list_result
 
-  topic_endpoints = _fetch_all_topic_info(max_workers=max_workers)
+  topic_endpoints = _fetch_topic_info_batch(agnocast_topics, max_workers=max_workers)
   if topic_endpoints is not None:
     logger.info('Topic endpoint info retrieved for %d topics',
           len(topic_endpoints))

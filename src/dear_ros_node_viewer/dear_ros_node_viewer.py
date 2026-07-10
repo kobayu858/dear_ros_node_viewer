@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from .logger_factory import LoggerFactory
 from .graph_view import GraphView
@@ -54,10 +55,18 @@ def save_info(save_path: Path):
         f.write(result.stdout)
     except Exception:
       logger.error(f'Faild to run command. {traceback.format_exc()}')
-  run_and_save(['top', '-c', '-w', '500', '-b', '-d', '1', '-n', '3'], save_path.joinpath('top.txt'))
-  run_and_save(['ros2', 'node', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_node_list.txt'))
-  run_and_save(['ros2', 'topic', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_topic_list.txt'))
-  run_and_save(['ros2', 'component', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_component_list.txt'))
+
+  # Each command is independent and writes to its own file, so run them
+  # concurrently instead of back-to-back.
+  jobs = [
+    (['top', '-c', '-w', '500', '-b', '-d', '1', '-n', '3'], save_path.joinpath('top.txt')),
+    (['ros2', 'node', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_node_list.txt')),
+    (['ros2', 'topic', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_topic_list.txt')),
+    (['ros2', 'component', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_component_list.txt')),
+  ]
+  with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+    for command, outputfile in jobs:
+      executor.submit(run_and_save, command, outputfile)
 
 
 def save_ros2dot(save_path: Path, display_unconnected_topics=False,
