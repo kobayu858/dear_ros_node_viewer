@@ -21,7 +21,7 @@ from .logger_factory import LoggerFactory
 from .caret2networkx import caret2networkx
 from .caret_extend_callback_group import extend_callback_group
 from .caret_extend_agnocast import extend_agnocast
-from .agnocast_extend_runtime import extend_agnocast_runtime
+from .agnocast_extend_runtime import extend_agnocast_runtime, AGNOCAST_INFO_MAX_WORKERS
 from .caret_extend_path import get_path_dict
 from .dot2networkx import dot2networkx
 from .ros2networkx import Ros2Networkx
@@ -166,7 +166,8 @@ class GraphManager:
                   self.app_setting['display_unconnected_topics'])
 
     if is_dynamic_load:
-      self.graph = extend_agnocast_runtime(self.graph)
+      max_workers = self.app_setting.get('agnocast_max_workers', AGNOCAST_INFO_MAX_WORKERS)
+      self.graph = extend_agnocast_runtime(self.graph, max_workers=max_workers)
       if self.graph.graph.get('is_agnocast_environment', True):
         save_agnocast_dot(self.graph, dot_path=filename)
 

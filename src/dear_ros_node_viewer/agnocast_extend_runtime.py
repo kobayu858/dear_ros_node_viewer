@@ -166,13 +166,15 @@ def _fetch_topic_info(topic: str) -> tuple[str, TopicEndpoints] | None:
   return topic, _parse_single_topic_info(output)
 
 
-def _fetch_all_topic_info() -> dict[str, TopicEndpoints] | None:
+def _fetch_all_topic_info(
+    max_workers: int = AGNOCAST_INFO_MAX_WORKERS
+) -> dict[str, TopicEndpoints] | None:
   """Execute ``ros2 topic info_agnocast -v`` per topic and return parsed result.
 
   Queries each Agnocast topic individually with ``-v`` to obtain
-  per-node endpoint information. Queries run concurrently (see
-  ``AGNOCAST_INFO_MAX_WORKERS``) since each is a separate ``ros2`` CLI
-  process and the calls are independent of each other.
+  per-node endpoint information. Queries run concurrently (up to
+  ``max_workers`` at once) since each is a separate ``ros2`` CLI process
+  and the calls are independent of each other.
   """
   topic_list_output = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
   if topic_list_output is None:
@@ -183,8 +185,8 @@ def _fetch_all_topic_info() -> dict[str, TopicEndpoints] | None:
     return None
 
   all_info: dict[str, TopicEndpoints] = {}
-  max_workers = min(AGNOCAST_INFO_MAX_WORKERS, len(agnocast_topics))
-  with ThreadPoolExecutor(max_workers=max_workers) as executor:
+  worker_count = min(max_workers, len(agnocast_topics))
+  with ThreadPoolExecutor(max_workers=worker_count) as executor:
     for result in executor.map(_fetch_topic_info, agnocast_topics):
       if result is not None:
         topic, endpoints = result
@@ -423,7 +425,10 @@ def _set_default_attributes(graph: nx.MultiDiGraph) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
-def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
+def extend_agnocast_runtime(
+    graph: nx.MultiDiGraph,
+    max_workers: int = AGNOCAST_INFO_MAX_WORKERS
+) -> nx.MultiDiGraph:
   """Extend graph with Agnocast attributes from runtime CLI.
 
   Processing order:
@@ -443,6 +448,8 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
   ----------
   graph : nx.MultiDiGraph
       Graph built by ``dot2networkx()``, before ``load_graph_postprocess()``.
+  max_workers : int
+      Max concurrent ``ros2 topic info_agnocast`` CLI calls (step 2).
 
   Returns
   -------
@@ -468,7 +475,7 @@ def extend_agnocast_runtime(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
 
   agnocast_only_nodes = node_list_result
 
-  topic_endpoints = _fetch_all_topic_info()
+  topic_endpoints = _fetch_all_topic_info(max_workers=max_workers)
   if topic_endpoints is not None:
     logger.info('Topic endpoint info retrieved for %d topics',
           len(topic_endpoints))
