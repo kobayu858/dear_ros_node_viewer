@@ -154,14 +154,31 @@ def dot2networkx_nodetopic(graph_org: nx.classes.digraph.DiGraph,
   return graph
 
 
+def parse_dot_file(filename: str) -> pydot.Dot:
+  """Parse a dot file into a pydot.Dot object.
+
+  Exposed so callers that also need pydot-level access to the same file
+  (e.g. save_agnocast_dot) can reuse this parse instead of re-reading and
+  re-parsing the file from disk a second time.
+  """
+  graphs = pydot.graph_from_dot_file(filename)
+  return graphs[0]
+
+
 def dot2networkx(filename: str, display_unconnected_nodes=False,
-         display_unconnected_topics=False) -> nx.classes.digraph.DiGraph:
-  """Function to create NetworkX object from dot graph file (rosgraph.dot)"""
-  try:
-    graph_org = nx.MultiDiGraph(nx.nx_pydot.read_dot(filename))
-  except:
-    graphs = pydot.graph_from_dot_file(filename)
-    graph_org = nx.MultiDiGraph(nx.drawing.nx_pydot.from_pydot(graphs[0]))
+         display_unconnected_topics=False,
+         pydot_graph: pydot.Dot | None = None) -> nx.classes.digraph.DiGraph:
+  """Function to create NetworkX object from dot graph file (rosgraph.dot)
+
+  Parameters
+  ----------
+  pydot_graph : pydot.Dot | None
+      Already-parsed pydot graph for ``filename``, to avoid re-parsing it.
+      When ``None``, this function parses ``filename`` itself.
+  """
+  if pydot_graph is None:
+    pydot_graph = parse_dot_file(filename)
+  graph_org = nx.MultiDiGraph(nx.drawing.nx_pydot.from_pydot(pydot_graph))
 
   is_node_only = True
   for node_org in graph_org.nodes:

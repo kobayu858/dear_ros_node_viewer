@@ -23,7 +23,7 @@ from .caret_extend_callback_group import extend_callback_group
 from .caret_extend_agnocast import extend_agnocast
 from .agnocast_extend_runtime import extend_agnocast_runtime, AGNOCAST_INFO_MAX_WORKERS
 from .caret_extend_path import get_path_dict
-from .dot2networkx import dot2networkx
+from .dot2networkx import dot2networkx, parse_dot_file
 from .ros2networkx import Ros2Networkx
 from .graph_layout import place_node_by_group
 from .mermaid_exporter import save_graph_to_mermaid
@@ -32,7 +32,8 @@ from .agnocast_extend_utils import AGNOCAST_NODE_ATTRS, AGNOCAST_EDGE_ATTRS
 logger = LoggerFactory.create(__name__)
 
 
-def save_agnocast_dot(graph: nx.MultiDiGraph, dot_path: str) -> None:
+def save_agnocast_dot(graph: nx.MultiDiGraph, dot_path: str,
+             pydot_graph: pydot.Dot | None = None) -> None:
   """Overwrite a dot file with Agnocast attributes added to nodes and edges.
 
   Reads the existing dot file, annotates nodes and edges with Agnocast
@@ -45,18 +46,26 @@ def save_agnocast_dot(graph: nx.MultiDiGraph, dot_path: str) -> None:
       Graph with Agnocast attributes already set by extend_agnocast_runtime().
   dot_path : str
       Path to the dot file to overwrite.
+  pydot_graph : pydot.Dot | None
+      Already-parsed pydot graph for ``dot_path`` (e.g. from
+      ``dot2networkx.parse_dot_file()``), to avoid re-parsing the same file
+      from disk a second time. When ``None``, this function parses
+      ``dot_path`` itself.
   """
-  try:
-    graphs = pydot.graph_from_dot_file(dot_path)
-  except Exception as e:
-    logger.error('Failed to read dot file for Agnocast annotation: %s', e)
-    return
+  if pydot_graph is not None:
+    dot_graph = pydot_graph
+  else:
+    try:
+      graphs = pydot.graph_from_dot_file(dot_path)
+    except Exception as e:
+      logger.error('Failed to read dot file for Agnocast annotation: %s', e)
+      return
 
-  if not graphs:
-    logger.error('No graph found in dot file: %s', dot_path)
-    return
+    if not graphs:
+      logger.error('No graph found in dot file: %s', dot_path)
+      return
 
-  dot_graph = graphs[0]
+    dot_graph = graphs[0]
 
   # Build lookups:
   #   label (e.g. '/node_src') -> pydot Node object
@@ -163,14 +172,16 @@ class GraphManager:
 
   def load_graph_from_dot(self, filename: str, is_dynamic_load: bool = False):
     """ load_graph_from_dot """
+    pydot_graph = parse_dot_file(filename)
     self.graph = dot2networkx(filename, self.app_setting['display_unconnected_nodes'],
-                  self.app_setting['display_unconnected_topics'])
+                  self.app_setting['display_unconnected_topics'],
+                  pydot_graph=pydot_graph)
 
     if is_dynamic_load and not self.app_setting.get('disable_agnocast', False):
       max_workers = self.app_setting.get('agnocast_max_workers', AGNOCAST_INFO_MAX_WORKERS)
       self.graph = extend_agnocast_runtime(self.graph, max_workers=max_workers)
       if self.graph.graph.get('is_agnocast_environment', True):
-        save_agnocast_dot(self.graph, dot_path=filename)
+        save_agnocast_dot(self.graph, dot_path=filename, pydot_graph=pydot_graph)
 
     self.load_graph_postprocess(filename)
 

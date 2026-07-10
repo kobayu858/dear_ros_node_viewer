@@ -27,7 +27,7 @@ from pathlib import Path
 from .logger_factory import LoggerFactory
 from .graph_view import GraphView
 from .ros2networkx import Ros2Networkx
-from .dot2networkx import dot2networkx
+from .dot2networkx import dot2networkx, parse_dot_file
 from .mermaid_exporter import export_to_mermaid_html
 from .agnocast_extend_runtime import extend_agnocast_runtime, AGNOCAST_INFO_MAX_WORKERS
 from .graph_manager import save_agnocast_dot
@@ -76,12 +76,14 @@ def save_ros2dot(save_path: Path, display_unconnected_topics=False,
   ros2networkx = Ros2Networkx()
   ros2networkx.save_graph(dot_filename)
   ros2networkx.shutdown()
+  pydot_graph = parse_dot_file(str(dot_filename))
   graph = dot2networkx(dot_filename, display_unconnected_nodes=True,
-             display_unconnected_topics=display_unconnected_topics)
+             display_unconnected_topics=display_unconnected_topics,
+             pydot_graph=pydot_graph)
   if not disable_agnocast:
     graph = extend_agnocast_runtime(graph, max_workers=agnocast_max_workers)
     if graph.graph.get('is_agnocast_environment', True):
-      save_agnocast_dot(graph, dot_path=str(dot_filename))
+      save_agnocast_dot(graph, dot_path=str(dot_filename), pydot_graph=pydot_graph)
   export_to_mermaid_html(graph, save_path.joinpath('node_diagram.mermaid.html'), 'ROS Node Graph')
 
 
