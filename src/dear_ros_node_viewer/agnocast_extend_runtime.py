@@ -1,0 +1,527 @@
+# Copyright 2023 iwatake2222
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Function to extend graph with Agnocast attributes from runtime CLI.
+
+This module adds Agnocast visualization attributes to a NetworkX graph
+by querying the running ROS 2 system via Agnocast CLI commands.
+It is the Phase 2 (dynamic input) counterpart of caret_extend_agnocast.py (Phase 1).
+
+The same graph attribute names are used so that graph_view.py / graph_viewmodel.py
+require zero changes.
+"""
+
+from __future__ import annotations
+import subprocess
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+import networkx as nx
+from .logger_factory import LoggerFactory
+from .agnocast_extend_utils import (
+  BRIDGE_NODE_PREFIX,
+  AGNOCAST_TOPIC_SUFFIX,
+  mark_bridge_nodes,
+  synthesize_bridge_direct_edges,
+  extract_node_basename,
+)
+
+logger = LoggerFactory.create(__name__)
+
+# Number of concurrent `ros2 topic info_agnocast` CLI calls.
+# Each call costs ~1-1.5s of wall time dominated by DDS discovery/rclpy
+# startup, not pure I/O wait, so pushing this too high risks discovery
+# traffic contention rather than a proportional speedup. 8 was chosen as
+# a balance between speedup and that risk (see PR discussion).
+AGNOCAST_INFO_MAX_WORKERS = 8
+
+
+@dataclass
+class EndpointInfo:
+  """A single Agnocast endpoint returned by CLI."""
+  node_name: str   # fully-qualified name, e.g. "/sensing/lidar_driver"
+  is_bridge: bool  # True if the node is a bridge node
+
+
+@dataclass
+class TopicEndpoints:
+  """Agnocast endpoints for one topic."""
+  agnocast_pubs: list[EndpointInfo] = field(default_factory=list)
+  agnocast_subs: list[EndpointInfo] = field(default_factory=list)
+
+
+def _run_agnocast_command(cmd: list[str], timeout: int = 15) -> str | None:
+  """Run an Agnocast CLI command and return stdout, or None on failure."""
+  try:
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if result.returncode != 0:
+      logger.warning('Agnocast command failed (rc=%d): %s\nstderr: %s',
+               result.returncode, ' '.join(cmd), result.stderr.strip())
+      return None
+    return result.stdout
+  except FileNotFoundError:
+    logger.warning('ros2 command not found. Agnocast features disabled.')
+    return None
+  except subprocess.TimeoutExpired:
+    logger.warning('Agnocast command timed out (%ds): %s', timeout, ' '.join(cmd))
+    return None
+
+
+def _parse_node_list_agnocast(output: str) -> set[str]:
+  """Parse ``ros2 node list_agnocast`` output.
+
+  Returns
+  -------
+  agnocast_only_nodes : set[str]
+      Nodes with ``(Agnocast enabled)`` — these are agnocast::Node nodes.
+  """
+  agnocast_only_nodes: set[str] = set()
+  for line in output.strip().splitlines():
+    line = line.strip()
+    if not line:
+      continue
+    node_name = line.split(' ')[0]
+    if '(Agnocast enabled)' in line:
+      agnocast_only_nodes.add(node_name)
+  return agnocast_only_nodes
+
+
+def _parse_topic_list_agnocast(output: str) -> set[str]:
+  """Parse ``ros2 topic list_agnocast`` output.
+
+  Returns set of Agnocast-enabled topic names.
+  """
+  agnocast_topics: set[str] = set()
+  for line in output.strip().splitlines():
+    line = line.strip()
+    if not line:
+      continue
+    topic = line.split(' ')[0]
+    if '(Agnocast' in line:
+      agnocast_topics.add(topic)
+  return agnocast_topics
+
+
+def _parse_single_topic_info(block: str) -> TopicEndpoints:
+  """Parse one topic block from ``ros2 topic info_agnocast -v`` output."""
+  endpoints = TopicEndpoints()
+  current_section: str | None = None
+  last_node_name: str | None = None
+  last_namespace: str | None = None
+
+  for line in block.strip().splitlines():
+    stripped = line.strip()
+
+    if stripped.startswith('Agnocast Publisher count:'):
+      current_section = 'pub'
+    elif stripped.startswith('Agnocast Subscription count:'):
+      current_section = 'sub'
+    elif stripped.startswith('ROS 2 Publisher count:'):
+      current_section = None
+    elif stripped.startswith('ROS 2 Subscription count:'):
+      current_section = None
+    elif stripped.startswith('Node name:'):
+      last_node_name = stripped.split(':', 1)[1].strip()
+    elif stripped.startswith('Node namespace:'):
+      last_namespace = stripped.split(':', 1)[1].strip()
+    elif 'Agnocast enabled' in stripped and current_section:
+      if last_namespace is not None and last_node_name is not None:
+        full_name = last_namespace.rstrip('/') + '/' + last_node_name
+        is_bridge = extract_node_basename(full_name).startswith(BRIDGE_NODE_PREFIX)
+        info = EndpointInfo(node_name=full_name, is_bridge=is_bridge)
+        if current_section == 'pub':
+          endpoints.agnocast_pubs.append(info)
+        else:
+          endpoints.agnocast_subs.append(info)
+
+  return endpoints
+
+
+def _fetch_node_list() -> set[str] | None:
+  """Execute ``ros2 node list_agnocast`` and return parsed result."""
+  output = _run_agnocast_command(['ros2', 'node', 'list_agnocast'])
+  if output is None:
+    return None
+  return _parse_node_list_agnocast(output)
+
+
+def _fetch_topic_info(topic: str) -> tuple[str, TopicEndpoints] | None:
+  """Query and parse Agnocast endpoint info for a single topic."""
+  output = _run_agnocast_command(
+    ['ros2', 'topic', 'info_agnocast', '-v', '-d', topic]
+  )
+  if output is None:
+    return None
+  return topic, _parse_single_topic_info(output)
+
+
+def _fetch_agnocast_topics() -> set[str] | None:
+  """Execute ``ros2 topic list_agnocast`` and return parsed topic names."""
+  output = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
+  if output is None:
+    return None
+  return _parse_topic_list_agnocast(output)
+
+
+def _fetch_topic_info_batch(
+    agnocast_topics: set[str] | None,
+    max_workers: int = AGNOCAST_INFO_MAX_WORKERS
+) -> dict[str, TopicEndpoints] | None:
+  """Execute ``ros2 topic info_agnocast -v`` per topic and return parsed result.
+
+  Queries each Agnocast topic individually with ``-v`` to obtain
+  per-node endpoint information. Queries run concurrently (up to
+  ``max_workers`` at once) since each is a separate ``ros2`` CLI process
+  and the calls are independent of each other.
+  """
+  if not agnocast_topics:
+    return None
+
+  all_info: dict[str, TopicEndpoints] = {}
+  worker_count = min(max_workers, len(agnocast_topics))
+  with ThreadPoolExecutor(max_workers=worker_count) as executor:
+    for result in executor.map(_fetch_topic_info, agnocast_topics):
+      if result is not None:
+        topic, endpoints = result
+        all_info[topic] = endpoints
+  return all_info if all_info else None
+
+
+def _quote_name(name: str) -> str:
+  """Convert a CLI node name to the dot2networkx quoted format.
+
+  Example: ``"/sensing/lidar"`` → ``'"/sensing/lidar"'``
+  """
+  return '"' + name + '"'
+
+
+def _edge_exists(graph: nx.MultiDiGraph,
+                 src: str, dst: str, topic: str) -> bool:
+  """Check if an edge with the given topic label already exists."""
+  edge_data = graph.get_edge_data(src, dst)
+  
+  if edge_data is None:
+    return False
+    
+  return any(data.get('label', '').strip('"') == topic for data in edge_data.values())
+
+
+def _build_topic_node_maps(graph: nx.MultiDiGraph
+                           ) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+  """Build topic→publisher and topic→subscriber maps from existing edges."""
+
+  topic_to_publishers = defaultdict(set)
+  topic_to_subscribers = defaultdict(set)
+
+  for src, dst, key in graph.edges:
+    label = graph.edges[src, dst, key].get('label', '').strip('"')
+    if not label:
+      continue
+      
+    topic_to_publishers[label].add(src)
+    topic_to_subscribers[label].add(dst)
+
+  return dict(topic_to_publishers), dict(topic_to_subscribers)
+
+
+def _add_edges_for_node(graph: nx.MultiDiGraph,
+            quoted_node: str,
+            pub_topics: set[str],
+            sub_topics: set[str],
+            topic_to_publishers: dict[str, set[str]],
+            topic_to_subscribers: dict[str, set[str]]):
+  """Add edges between an agnocast::Node and existing nodes via topic matching.
+
+  - agnocast::Node publishes → edges to existing subscribers
+  - agnocast::Node subscribes → edges from existing publishers
+  """
+  for topic in pub_topics:
+    for sub_node in topic_to_subscribers.get(topic, set()):
+      if sub_node == quoted_node:
+        continue
+      if not _edge_exists(graph, quoted_node, sub_node, topic):
+        graph.add_edge(quoted_node, sub_node,
+                label=topic, is_agnocast=True)
+
+  for topic in sub_topics:
+    for pub_node in topic_to_publishers.get(topic, set()):
+      if pub_node == quoted_node:
+        continue
+      if not _edge_exists(graph, pub_node, quoted_node, topic):
+        graph.add_edge(pub_node, quoted_node,
+                label=topic, is_agnocast=True)
+
+
+def _add_agnocast_nodes(graph: nx.MultiDiGraph,
+                        agnocast_only_nodes: set[str],
+                        node_topics: dict[str, tuple[set[str], set[str]]],
+                        topic_endpoints: dict[str, TopicEndpoints] | None = None
+                        ) -> nx.MultiDiGraph:
+  
+  t_pub, t_sub = _build_topic_node_maps(graph)
+  
+  topic_to_publishers = defaultdict(set, t_pub)
+  topic_to_subscribers = defaultdict(set, t_sub)
+
+  if topic_endpoints is not None:
+    for topic, endpoints in topic_endpoints.items():
+      for ep in endpoints.agnocast_pubs:
+        quoted = _quote_name(ep.node_name)
+        topic_to_publishers[topic].add(quoted)
+      for ep in endpoints.agnocast_subs:
+        quoted = _quote_name(ep.node_name)
+        topic_to_subscribers[topic].add(quoted)
+
+  nodes_to_connect: list[tuple[str, set[str], set[str]]] = []
+  for node_name in agnocast_only_nodes:
+    if extract_node_basename(node_name).startswith(BRIDGE_NODE_PREFIX):
+      continue
+
+    quoted_name = _quote_name(node_name)
+    if quoted_name in graph.nodes:
+      continue
+
+    graph.add_node(quoted_name)
+    logger.debug('Added agnocast node: %s', node_name)
+
+    if node_name in node_topics:
+      pub_topics, sub_topics = node_topics[node_name]
+      for topic in pub_topics:
+        topic_to_publishers[topic].add(quoted_name)
+      for topic in sub_topics:
+        topic_to_subscribers[topic].add(quoted_name)
+      nodes_to_connect.append((quoted_name, pub_topics, sub_topics))
+
+  for quoted_name, pub_topics, sub_topics in nodes_to_connect:
+    _add_edges_for_node(graph, quoted_name,
+                        pub_topics, sub_topics,
+                        dict(topic_to_publishers), dict(topic_to_subscribers))
+    
+  if topic_endpoints is not None:
+    for topic, endpoints in topic_endpoints.items():
+      for pub_ep in endpoints.agnocast_pubs:
+        quoted_pub = _quote_name(pub_ep.node_name)
+        if quoted_pub not in graph.nodes:
+          graph.add_node(quoted_pub)
+          logger.debug('Added rclcpp agnocast node: %s', pub_ep.node_name)
+        for sub_ep in endpoints.agnocast_subs:
+          quoted_sub = _quote_name(sub_ep.node_name)
+          if quoted_sub not in graph.nodes:
+            graph.add_node(quoted_sub)
+            logger.debug('Added rclcpp agnocast node: %s', sub_ep.node_name)
+          if quoted_pub == quoted_sub:
+            continue
+          if not _edge_exists(graph, quoted_pub, quoted_sub, topic):
+            graph.add_edge(quoted_pub, quoted_sub,
+                           label=topic, is_agnocast=True)
+            logger.debug('Added agnocast edge (existing node): %s -> %s [%s]',
+                         quoted_pub, quoted_sub, topic)
+
+  return graph
+
+
+def _mark_agnocast_edges(graph: nx.MultiDiGraph,
+             topic_endpoints: dict[str, TopicEndpoints] | None
+             ) -> nx.MultiDiGraph:
+  """Set ``is_agnocast`` attribute on every edge.
+
+  Uses endpoint information to determine whether an edge's
+  publisher or subscriber is Agnocast-enabled.
+
+  Parameters
+  ----------
+  topic_endpoints
+      Result of ``_fetch_topic_info_batch()``.  If ``None``, all edges
+      that don't already have ``is_agnocast`` are set to ``False``.
+  """
+  if topic_endpoints is None:
+    for edge in graph.edges:
+      graph.edges[edge].setdefault('is_agnocast', False)
+    return graph
+
+  # Build lookup: topic → set of quoted Agnocast pub/sub node names
+  topic_agnocast_pubs: dict[str, set[str]] = {}
+  topic_agnocast_subs: dict[str, set[str]] = {}
+
+  for topic, endpoints in topic_endpoints.items():
+    pub_nodes = set()
+    for ep in endpoints.agnocast_pubs:
+      if not ep.is_bridge:
+        pub_nodes.add(_quote_name(ep.node_name))
+    topic_agnocast_pubs[topic] = pub_nodes
+
+    sub_nodes = set()
+    for ep in endpoints.agnocast_subs:
+      if not ep.is_bridge:
+        sub_nodes.add(_quote_name(ep.node_name))
+    topic_agnocast_subs[topic] = sub_nodes
+
+  for edge in graph.edges:
+    # Skip edges already marked (e.g. newly added agnocast edges)
+    if 'is_agnocast' in graph.edges[edge]:
+      continue
+
+    src, dst, _ = edge
+    label = graph.edges[edge].get('label', '').strip('"')
+
+    if not label:
+      graph.edges[edge]['is_agnocast'] = False
+      continue
+
+    is_agnocast_pub = src in topic_agnocast_pubs.get(label, set())
+    is_agnocast_sub = dst in topic_agnocast_subs.get(label, set())
+    graph.edges[edge]['is_agnocast'] = is_agnocast_pub or is_agnocast_sub
+
+  return graph
+
+
+def _mark_agnocast_nodes(graph: nx.MultiDiGraph,
+             agnocast_only_nodes: set[str] | None
+             ) -> nx.MultiDiGraph:
+  """Set ``is_agnocast_node`` (bool) on every node.
+
+  ``is_agnocast_node`` is True for agnocast::Node nodes,
+  False for all others (rclcpp-only nodes).
+  """
+  if agnocast_only_nodes is not None:
+    quoted_agnocast_nodes = {_quote_name(n) for n in agnocast_only_nodes}
+  else:
+    quoted_agnocast_nodes = set()
+
+  for node_name in graph.nodes:
+    graph.nodes[node_name]['is_agnocast_node'] = node_name in quoted_agnocast_nodes
+
+  return graph
+
+
+def _has_agnocast_attributes(graph: nx.MultiDiGraph) -> bool:
+  """Return True if the graph already has Agnocast attributes from a saved dot.
+
+  Checks whether at least one node carries ``is_agnocast_node``, which is
+  set only by ``extend_agnocast_runtime()`` or ``extend_agnocast()``.
+  When True, the dot was saved with Agnocast info and CLI queries can be skipped.
+  """
+  return any('is_agnocast_node' in graph.nodes[n] for n in graph.nodes)
+
+
+def _set_default_attributes(graph: nx.MultiDiGraph) -> None:
+  """Set safe defaults when CLI is completely unavailable."""
+  for node_name in graph.nodes:
+    graph.nodes[node_name]['is_bridge_node'] = False
+    graph.nodes[node_name]['is_agnocast_node'] = False
+  for edge in graph.edges:
+    graph.edges[edge]['is_agnocast'] = False
+    graph.edges[edge]['is_bridge_edge'] = False
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def extend_agnocast_runtime(
+    graph: nx.MultiDiGraph,
+    max_workers: int = AGNOCAST_INFO_MAX_WORKERS
+) -> nx.MultiDiGraph:
+  """Extend graph with Agnocast attributes from runtime CLI.
+
+  Processing order:
+    1. ``ros2 node list_agnocast``            — identify agnocast::Node nodes
+    2. ``ros2 topic list_agnocast`` +
+       ``ros2 topic info_agnocast -v -d`` (×N) — all endpoint information
+    3. Build node→topics map by reverse lookup of ``topic_endpoints`` (in-memory)
+    4. Add agnocast::Node nodes and their edges to the graph
+    5. Mark ``is_agnocast`` on existing edges
+    6. Detect bridge nodes and synthesize direct edges
+    7. Mark ``is_agnocast_node`` on nodes
+
+  On CLI failure, returns the graph with safe default attributes
+  (graceful degradation).
+
+  Parameters
+  ----------
+  graph : nx.MultiDiGraph
+      Graph built by ``dot2networkx()``, before ``load_graph_postprocess()``.
+  max_workers : int
+      Max concurrent ``ros2 topic info_agnocast`` CLI calls (step 2).
+
+  Returns
+  -------
+  graph : nx.MultiDiGraph
+      Same graph with Agnocast attributes added.
+  """
+
+  if _has_agnocast_attributes(graph):
+    logger.info('Agnocast attributes found in dot. Skipping CLI queries.')
+    mark_bridge_nodes(graph)
+    synthesize_bridge_direct_edges(graph, upgrade_existing_edges=True)
+    graph.graph['is_agnocast_environment'] = True
+    return graph
+
+  # ros2 node list_agnocast and ros2 topic list_agnocast are independent
+  # CLI round-trips; run them concurrently instead of back-to-back.
+  with ThreadPoolExecutor(max_workers=2) as executor:
+    node_list_future = executor.submit(_fetch_node_list)
+    agnocast_topics_future = executor.submit(_fetch_agnocast_topics)
+    node_list_result = node_list_future.result()
+    agnocast_topics = agnocast_topics_future.result()
+
+  if node_list_result is None:
+    logger.info('Agnocast node list unavailable. Agnocast features disabled.')
+    _set_default_attributes(graph)
+    graph.graph['is_agnocast_environment'] = False
+    return graph
+
+  graph.graph['is_agnocast_environment'] = True
+
+  agnocast_only_nodes = node_list_result
+
+  topic_endpoints = _fetch_topic_info_batch(agnocast_topics, max_workers=max_workers)
+  if topic_endpoints is not None:
+    logger.info('Topic endpoint info retrieved for %d topics',
+          len(topic_endpoints))
+
+  # Reverse the topic→endpoints map into a node→(pub_topics, sub_topics) map.
+  # This replaces ``ros2 node info_agnocast`` × M queries with in-memory work.
+  # Only agnocast::Node nodes that are not bridge nodes are included, matching the
+  # filtering previously done in the per-node loop.
+  node_topics: dict[str, tuple[set[str], set[str]]] = defaultdict(
+      lambda: (set(), set()))
+
+  if topic_endpoints is not None:
+    for topic, endpoints in topic_endpoints.items():
+      for ep in endpoints.agnocast_pubs:
+        if ep.node_name in agnocast_only_nodes and not ep.is_bridge:
+          node_topics[ep.node_name][0].add(topic)
+      for ep in endpoints.agnocast_subs:
+        if ep.node_name in agnocast_only_nodes and not ep.is_bridge:
+          node_topics[ep.node_name][1].add(topic)
+
+  # Convert to a regular dict so downstream code sees the same type as before.
+  node_topics = dict(node_topics)
+  logger.debug('Built node_topics for %d agnocast nodes via reverse lookup',
+               len(node_topics))
+
+  graph = _add_agnocast_nodes(graph, agnocast_only_nodes, node_topics,
+                topic_endpoints)
+
+  graph = _mark_agnocast_edges(graph, topic_endpoints)
+
+  # mark_bridge_nodes must run before synthesize_bridge_direct_edges (is_bridge_node required).
+  # upgrade_existing_edges=True: Step 4 may have already added agnocast edges on the same path.
+  mark_bridge_nodes(graph)
+  synthesize_bridge_direct_edges(graph, upgrade_existing_edges=True)
+
+  graph = _mark_agnocast_nodes(graph, agnocast_only_nodes)
+
+  return graph

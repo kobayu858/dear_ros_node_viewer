@@ -62,7 +62,29 @@ class GraphViewModel:
       'id_edge': {},           # {id: "edge_name"}
       'edge_color': {},        # {edge_obj: color_id}
       'callbackgroup_id': {},  # {"callback_group_name": attr_id}
+      'bridge_node_ids': {},        # {"node_name": dpg_id}
+      'bridge_edge_ids': {},        # {edge_obj: dpg_id}
+      'bridged_direct_edge_ids': {},  # {edge_obj: dpg_id}
     }
+
+    # Agnocast display state
+    self.agnocast_display = {
+      'show_agnocast': False,
+      'show_bridge': False,
+    }
+
+    # Agnocast colors
+    # Load from agnocast_color_setting in setting.json.
+    # If the key is absent, fall back to the hardcoded defaults below.
+    # This keeps backward compatibility with environments that have no setting.json
+    # or use an older config file, while still allowing users to customize the colors.
+    agnocast_colors = app_setting.get('agnocast_color_setting', {})
+
+    self.color_agnocast_edge  = agnocast_colors.get('agnocast_edge',     [0, 255, 255])
+    self.color_agnocast_node  = agnocast_colors.get('agnocast_node_bg',  [0, 120, 120])
+    self.color_bridge_node    = agnocast_colors.get('bridge_node_title',  [220, 130, 20])
+    self.color_bridge_node_bg = agnocast_colors.get('bridge_node_bg',    [80, 45, 5])
+    self.color_bridge_edge    = agnocast_colors.get('bridge_edge',        [220, 130, 20])
 
   def get_graph(self) -> nx.DiGraph:
     """Graph getter"""
@@ -99,6 +121,9 @@ class GraphViewModel:
     self.dpg_bind['id_edge'].clear()
     self.dpg_bind['edge_color'].clear()
     self.dpg_bind['callbackgroup_id'].clear()
+    self.dpg_bind['bridge_node_ids'].clear()
+    self.dpg_bind['bridge_edge_ids'].clear()
+    self.dpg_bind['bridged_direct_edge_ids'].clear()
     self.node_selected_dict.clear()
     for node_name in self.get_graph().nodes:
       self.node_selected_dict[node_name] = False
@@ -111,9 +136,9 @@ class GraphViewModel:
     """ Add association b/w node_name and dpg_id """
     self.dpg_bind['node_color'][node_name] = dpg_id
 
-  def add_dpg_nodeedge_idtext(self, node_name, edge_name, attr_id, text_id):
+  def add_dpg_nodeedge_idtext(self, node_name, edge_name, attr_id, text_id, port_type=''):
     """ Add association b/w node_attr and dpg_id """
-    key = self._make_nodeedge_key(node_name, edge_name)
+    key = self._make_nodeedge_key(node_name, edge_name, port_type)
     self.dpg_bind['nodeedge_id'][key] = attr_id
     self.dpg_bind['nodeedge_text'][key] = text_id
 
@@ -129,14 +154,14 @@ class GraphViewModel:
     """ Add association b/w callback_group_name and dpg_id """
     self.dpg_bind['callbackgroup_id'][callback_group_name] = dpg_id
 
-  def get_dpg_nodeedge_id(self, node_name, edge_name):
+  def get_dpg_nodeedge_id(self, node_name, edge_name, port_type=''):
     """ Get association for a selected name """
-    key = self._make_nodeedge_key(node_name, edge_name)
+    key = self._make_nodeedge_key(node_name, edge_name, port_type)
     return self.dpg_bind['nodeedge_id'][key]
 
-  def _make_nodeedge_key(self, node_name, edge_name):
+  def _make_nodeedge_key(self, node_name, edge_name, port_type=''):
     """create dictionary key for topic attribute in node"""
-    return node_name + '###' + edge_name
+    return node_name + '###' + port_type + edge_name
 
   def high_light_node(self, dpg_id_node):
     """ High light the selected node and connected nodes """
@@ -155,23 +180,23 @@ class GraphViewModel:
         self.node_selected_dict[node_name] = False
         dpg.set_value(
           self.dpg_bind['node_color'][node_name],
-          self.color_highlight_def)
+          self._resolve_node_color(node_name))
         for edge_name in publishing_edge_list:
           dpg.set_value(
             self.dpg_bind['edge_color'][edge_name],
-            graph.nodes[node_name]['color'])
+            self._resolve_edge_color(edge_name))
         for pub_node_name in publishing_edge_subscribing_node_name_list:
           dpg.set_value(
             self.dpg_bind['node_color'][pub_node_name],
-            self.color_highlight_def)
+            self._resolve_node_color(pub_node_name))
         for edge_name in subscribing_edge_list:
           dpg.set_value(
             self.dpg_bind['edge_color'][edge_name],
-            graph.nodes[node_name]['color'])  # todo. incorrect color
+            self._resolve_edge_color(edge_name))
         for sub_node_name in subscribing_edge_publishing_node_name_list:
           dpg.set_value(
             self.dpg_bind['node_color'][sub_node_name],
-            self.color_highlight_def)
+            self._resolve_node_color(sub_node_name))
         break
 
     if not is_re_clicked:
@@ -265,7 +290,8 @@ class GraphViewModel:
     """ Update edge name """
     for nodeedge_name, text_id in self.dpg_bind['nodeedge_text'].items():
       edgename = nodeedge_name.split('###')[-1]
-      dpg.set_value(text_id, value=self.omit_name(edgename, omit_type))
+      display_edgename = edgename.replace('_agnocast', '')
+      dpg.set_value(text_id, value=self.omit_name(display_edgename, omit_type))
 
   def omit_name(self, name: str, omit_type: OmitType) -> str:
     """ replace an original name to a name to be displayed """
@@ -332,7 +358,7 @@ class GraphViewModel:
     for node_name in graph.nodes:
       dpg.set_value(
         self.dpg_bind['node_color'][node_name],
-        self.color_highlight_def)
+        self._resolve_node_color(node_name))
 
     # Then, high light nodes in the path
     node_list = self.graph_manager.caret_path_dict[path_name]
@@ -355,3 +381,109 @@ class GraphViewModel:
         str: Path to saved HTML file
     """
     return self.graph_manager.export_to_mermaid(output_dir)
+
+  def has_bridge_nodes(self) -> bool:
+    """Check if the graph has any bridge nodes"""
+    graph = self.get_graph()
+    for node_name in graph.nodes:
+      if graph.nodes[node_name].get('is_bridge_node', False):
+        return True
+    return False
+
+  def toggle_agnocast_display(self, onoff: bool):
+    """Toggle Agnocast edge and node coloring together"""
+    self.agnocast_display['show_agnocast'] = onoff
+    self._apply_all_colors()
+
+  def toggle_bridge_display(self, onoff: bool):
+    """Toggle bridge node/edge visibility"""
+    self.agnocast_display['show_bridge'] = onoff
+
+    # Show/hide bridge nodes
+    for _, node_id in self.dpg_bind['bridge_node_ids'].items():
+      if onoff:
+        dpg.show_item(node_id)
+      else:
+        dpg.hide_item(node_id)
+
+    # Show/hide bridge edges
+    for _, edge_id in self.dpg_bind['bridge_edge_ids'].items():
+      if onoff:
+        dpg.show_item(edge_id)
+      else:
+        dpg.hide_item(edge_id)
+
+    # Inverse: show/hide synthesized direct edges
+    for _, edge_id in self.dpg_bind['bridged_direct_edge_ids'].items():
+      if onoff:
+        dpg.hide_item(edge_id)
+      else:
+        dpg.show_item(edge_id)
+
+    self._apply_all_colors()
+
+  def _resolve_node_color(self, node_name: str) -> list[int]:
+    """Determine the correct background color for a node given current toggle state.
+
+    Priority (highest first):
+      1. Bridge node → orange (always, regardless of toggles)
+      2. Show Agnocast Node ON + agnocast node → teal
+      3. Default → gray
+    """
+    graph = self.get_graph()
+    node_data = graph.nodes[node_name]
+
+    if node_data.get('is_bridge_node', False):
+      return self.color_bridge_node_bg
+
+    if self.agnocast_display['show_agnocast']:
+      if node_data.get('is_agnocast_node', False):
+        return self.color_agnocast_node
+
+    return self.color_highlight_def
+
+  def _resolve_edge_color(self, edge) -> list[int]:
+    """Determine the correct color for an edge given current toggle state.
+
+    Normal rules (highest priority first):
+      1. Show Agnocast Edge ON + Bridged direct edge + Bridge OFF → orange
+      2. Show Agnocast Edge ON + is_agnocast → cyan
+      3. Default → publisher node color
+    """
+    graph = self.get_graph()
+    edge_data = graph.edges[edge]
+
+    if self.agnocast_display['show_agnocast']:
+      if edge_data.get('is_bridged', False) and not self.agnocast_display['show_bridge']:
+        return self.color_bridge_edge
+
+      if edge_data.get('is_agnocast', False):
+        return self.color_agnocast_edge
+
+    return graph.nodes[edge[0]].get('color', self.color_highlight_def)
+
+  def _apply_all_colors(self):
+    """Reapply colors to all nodes and edges based on current toggle state."""
+    graph = self.get_graph()
+
+    for node_name in graph.nodes:
+      if node_name in self.dpg_bind['node_color']:
+        color = self._resolve_node_color(node_name)
+        dpg.set_value(self.dpg_bind['node_color'][node_name], color)
+
+    for edge in graph.edges:
+      if edge in self.dpg_bind['edge_color']:
+        color = self._resolve_edge_color(edge)
+        dpg.set_value(self.dpg_bind['edge_color'][edge], color)
+
+  def add_dpg_bridge_node_id(self, node_name, dpg_id):
+    """Register bridge node dpg_id"""
+    self.dpg_bind['bridge_node_ids'][node_name] = dpg_id
+
+  def add_dpg_bridge_edge_id(self, edge, dpg_id):
+    """Register bridge edge dpg_id"""
+    self.dpg_bind['bridge_edge_ids'][edge] = dpg_id
+
+  def add_dpg_bridged_direct_edge_id(self, edge, dpg_id):
+    """Register synthesized direct edge dpg_id"""
+    self.dpg_bind['bridged_direct_edge_ids'][edge] = dpg_id

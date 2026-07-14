@@ -22,12 +22,15 @@ import json
 import os
 import subprocess
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from .logger_factory import LoggerFactory
 from .graph_view import GraphView
 from .ros2networkx import Ros2Networkx
-from .dot2networkx import dot2networkx
+from .dot2networkx import dot2networkx, parse_dot_file
 from .mermaid_exporter import export_to_mermaid_html
+from .agnocast_extend_runtime import extend_agnocast_runtime, AGNOCAST_INFO_MAX_WORKERS
+from .graph_manager import save_agnocast_dot
 
 
 logger = LoggerFactory.create(__name__)
@@ -52,20 +55,35 @@ def save_info(save_path: Path):
         f.write(result.stdout)
     except Exception:
       logger.error(f'Faild to run command. {traceback.format_exc()}')
-  run_and_save(['top', '-c', '-w', '500', '-b', '-d', '1', '-n', '3'], save_path.joinpath('top.txt'))
-  run_and_save(['ros2', 'node', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_node_list.txt'))
-  run_and_save(['ros2', 'topic', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_topic_list.txt'))
-  run_and_save(['ros2', 'component', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_component_list.txt'))
+
+  # Each command is independent and writes to its own file, so run them
+  # concurrently instead of back-to-back.
+  jobs = [
+    (['top', '-c', '-w', '500', '-b', '-d', '1', '-n', '3'], save_path.joinpath('top.txt')),
+    (['ros2', 'node', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_node_list.txt')),
+    (['ros2', 'topic', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_topic_list.txt')),
+    (['ros2', 'component', 'list', '--spin-time', '5.0'], save_path.joinpath('ros2_component_list.txt')),
+  ]
+  with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+    for command, outputfile in jobs:
+      executor.submit(run_and_save, command, outputfile)
 
 
-def save_ros2dot(save_path: Path, display_unconnected_topics=False):
+def save_ros2dot(save_path: Path, display_unconnected_topics=False,
+         agnocast_max_workers=AGNOCAST_INFO_MAX_WORKERS, disable_agnocast=False):
   """save dot file for the current ROS 2 graph"""
   dot_filename = save_path.joinpath('node_diagram.dot')
   ros2networkx = Ros2Networkx()
   ros2networkx.save_graph(dot_filename)
   ros2networkx.shutdown()
+  pydot_graph = parse_dot_file(str(dot_filename))
   graph = dot2networkx(dot_filename, display_unconnected_nodes=True,
-             display_unconnected_topics=display_unconnected_topics)
+             display_unconnected_topics=display_unconnected_topics,
+             pydot_graph=pydot_graph)
+  if not disable_agnocast:
+    graph = extend_agnocast_runtime(graph, max_workers=agnocast_max_workers)
+    if graph.graph.get('is_agnocast_environment', True):
+      save_agnocast_dot(graph, dot_path=str(dot_filename), pydot_graph=pydot_graph)
   export_to_mermaid_html(graph, save_path.joinpath('node_diagram.mermaid.html'), 'ROS Node Graph')
 
 
@@ -95,12 +113,19 @@ def load_setting_json(graph_file, displace_new_node):
       setting = json.load(f_setting)
     app_setting = setting['app_setting']
     group_setting = setting['group_setting']
+    # agnocast_color_setting is an optional field.
+    # If the key is absent, pass an empty dict so that graph_viewmodel
+    # falls back to its hardcoded defaults (for backward compatibility).
+    app_setting['agnocast_color_setting'] = setting.get('agnocast_color_setting', {})
   else:
     # Incase, default setting file was not found, too
     logger.info('Unable to find %s. Use fixed default setting', setting_file)
     app_setting = {
       "window_size": [1920, 1080],
-      "font": "font/roboto/Roboto-Medium.ttf"
+      "font": "font/roboto/Roboto-Medium.ttf",
+      # Pass an empty dict so that graph_viewmodel falls back to its
+      # hardcoded defaults (for backward compatibility).
+      "agnocast_color_setting": {}
     }
     group_setting = {
       "__others__": {
@@ -137,6 +162,11 @@ def parse_args():
   parser.add_argument('--displace_new_node', type=strtobool, default=False)
   parser.add_argument('--bg_white', type=strtobool, default=False, help='Use white background')
   parser.add_argument('--save_only', type=strtobool, default=False, help='Save dot file only for CLI')
+  parser.add_argument('--agnocast_max_workers', type=int, default=AGNOCAST_INFO_MAX_WORKERS,
+            help='Max concurrent "ros2 topic info_agnocast" CLI calls '
+               f'(default={AGNOCAST_INFO_MAX_WORKERS})')
+  parser.add_argument('--disable_agnocast', type=strtobool, default=False,
+            help='Skip Agnocast querying/annotation entirely')
   args = parser.parse_args()
 
   logger.debug(f'args.graph_file = {args.graph_file}')
@@ -147,6 +177,8 @@ def parse_args():
   logger.debug(f'args.displace_new_node = {args.displace_new_node}')
   logger.debug(f'args.bg_white = {args.bg_white}')
   logger.debug(f'args.save_only = {args.save_only}')
+  logger.debug(f'args.agnocast_max_workers = {args.agnocast_max_workers}')
+  logger.debug(f'args.disable_agnocast = {args.disable_agnocast}')
 
   return args
 
@@ -162,7 +194,9 @@ def main():
     save_path = Path(f'./ros2_graph_{now_str}')
     Path.mkdir(save_path, exist_ok=True)
     save_info(save_path)
-    save_ros2dot(save_path, args.display_unconnected_topics)
+    save_ros2dot(save_path, args.display_unconnected_topics,
+           agnocast_max_workers=args.agnocast_max_workers,
+           disable_agnocast=args.disable_agnocast)
     logger.info(f'save to {save_path}')
     return
 
@@ -177,6 +211,8 @@ def main():
   app_setting['display_unconnected_nodes'] = args.display_unconnected_nodes
   app_setting['display_unconnected_topics'] = args.display_unconnected_topics
   app_setting['bg_white'] = args.bg_white
+  app_setting['agnocast_max_workers'] = args.agnocast_max_workers
+  app_setting['disable_agnocast'] = args.disable_agnocast
   if args.bg_white:
     # make component colors bright
     for _, setting in group_setting.items():
@@ -185,6 +221,10 @@ def main():
         # For yello color
         bright_bias = 80
       setting['color'] = [val + bright_bias for val in setting['color']]
+    # make agnocast colors bright
+    agnocast_bias = 100
+    for key, val in app_setting.get('agnocast_color_setting', {}).items():
+      app_setting['agnocast_color_setting'][key] = [min(v + agnocast_bias, 255) for v in val]
 
   graph_filename = args.graph_file
 

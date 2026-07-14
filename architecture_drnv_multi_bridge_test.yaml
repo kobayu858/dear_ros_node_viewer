@@ -1,0 +1,124 @@
+named_paths: []
+executors:
+- executor_type: agnocast_single_threaded_executor
+  executor_name: executor_00
+  callback_group_names:
+  - /agnocast_bridge_node_99999/callback_group_0
+  - /agnocast_bridge_node_99999/callback_group_1
+- executor_type: agnocast_only_single_threaded_executor
+  executor_name: executor_01
+  callback_group_names:
+  - /node_a/callback_group_0
+- executor_type: agnocast_only_single_threaded_executor
+  executor_name: executor_02
+  callback_group_names:
+  - /node_b/callback_group_0
+- executor_type: single_threaded_executor
+  executor_name: executor_03
+  callback_group_names:
+  - /node_c/callback_group_0
+- executor_type: single_threaded_executor
+  executor_name: executor_04
+  callback_group_names:
+  - /node_d/callback_group_0
+nodes:
+- node_name: /agnocast_bridge_node_99999
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /agnocast_bridge_node_99999/callback_group_0
+    callback_names:
+    - /agnocast_bridge_node_99999/callback_0
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /agnocast_bridge_node_99999/callback_group_1
+    callback_names:
+    - /agnocast_bridge_node_99999/callback_1
+  callbacks:
+  - callback_name: /agnocast_bridge_node_99999/callback_0
+    callback_type: subscription_callback
+    topic_name: /topic_a_agnocast
+    symbol: agnocast::AgnocastToRosBridge<std_msgs::msg::Float64MultiArray_<std::allocator<void>>>::AgnocastToRosBridge
+  - callback_name: /agnocast_bridge_node_99999/callback_1
+    callback_type: subscription_callback
+    topic_name: /topic_b_agnocast
+    symbol: agnocast::AgnocastToRosBridge<std_msgs::msg::Float64MultiArray_<std::allocator<void>>>::AgnocastToRosBridge
+  publishes:
+  - topic_name: /topic_a
+    callback_names:
+    - /agnocast_bridge_node_99999/callback_0
+  - topic_name: /topic_b
+    callback_names:
+    - /agnocast_bridge_node_99999/callback_1
+  subscribes:
+  - topic_name: /topic_a_agnocast
+    callback_name: /agnocast_bridge_node_99999/callback_0
+  - topic_name: /topic_b_agnocast
+    callback_name: /agnocast_bridge_node_99999/callback_1
+  message_contexts:
+  - context_type: callback_chain
+    subscription_topic_name: /topic_a_agnocast
+    publisher_topic_name: /topic_a
+    callbacks:
+    - /agnocast_bridge_node_99999/callback_0
+  - context_type: callback_chain
+    subscription_topic_name: /topic_b_agnocast
+    publisher_topic_name: /topic_b
+    callbacks:
+    - /agnocast_bridge_node_99999/callback_1
+- node_name: /node_a
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /node_a/callback_group_0
+    callback_names:
+    - /node_a/callback_0
+  callbacks:
+  - callback_name: /node_a/callback_0
+    callback_type: timer_callback
+    period_ns: 100000000
+    symbol: NodeA::timer_callback
+  publishes:
+  - topic_name: /topic_a_agnocast
+    callback_names:
+    - /node_a/callback_0
+- node_name: /node_b
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /node_b/callback_group_0
+    callback_names:
+    - /node_b/callback_0
+  callbacks:
+  - callback_name: /node_b/callback_0
+    callback_type: timer_callback
+    period_ns: 100000000
+    symbol: NodeB::timer_callback
+  publishes:
+  - topic_name: /topic_b_agnocast
+    callback_names:
+    - /node_b/callback_0
+- node_name: /node_c
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /node_c/callback_group_0
+    callback_names:
+    - /node_c/callback_0
+  callbacks:
+  - callback_name: /node_c/callback_0
+    callback_type: subscription_callback
+    topic_name: /topic_a
+    symbol: NodeC::subscription_callback
+  subscribes:
+  - topic_name: /topic_a
+    callback_name: /node_c/callback_0
+- node_name: /node_d
+  callback_groups:
+  - callback_group_type: mutually_exclusive
+    callback_group_name: /node_d/callback_group_0
+    callback_names:
+    - /node_d/callback_0
+  callbacks:
+  - callback_name: /node_d/callback_0
+    callback_type: subscription_callback
+    topic_name: /topic_b
+    symbol: NodeD::subscription_callback
+  subscribes:
+  - topic_name: /topic_b
+    callback_name: /node_d/callback_0
