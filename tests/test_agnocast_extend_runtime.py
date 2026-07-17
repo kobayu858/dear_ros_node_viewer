@@ -603,5 +603,63 @@ class TestHelpers(unittest.TestCase):
       self.assertFalse(g.edges[edge]['is_bridge_edge'])
 
 
+class TestMissingDiscoveryAgentDetection(unittest.TestCase):
+  """Tests for discovery-agent absence detection and warning."""
+
+  def test_is_missing_discovery_agent_error(self):
+    self.assertTrue(runtime._is_missing_discovery_agent_error(
+      'NOTE: no /_agnocast_discovery agent visible; showing local NS only'))
+    self.assertTrue(runtime._is_missing_discovery_agent_error(
+      'WARNING: /_agnocast_discovery has 1 publisher(s) visible but no '
+      'snapshot received in 2.0s; falling back to ioctl'))
+    self.assertFalse(runtime._is_missing_discovery_agent_error(
+      'Unknown topic: /some/topic'))
+    self.assertFalse(runtime._is_missing_discovery_agent_error(''))
+    self.assertFalse(runtime._is_missing_discovery_agent_error(None))
+
+  def test_fetch_topic_info_reports_missing_discovery_agent(self):
+    with patch.object(runtime, '_run_agnocast_command',
+                      return_value=(None, 'no /_agnocast_discovery agent visible')):
+      topic, endpoints, missing = runtime._fetch_topic_info('/t')
+    self.assertEqual(topic, '/t')
+    self.assertIsNone(endpoints)
+    self.assertTrue(missing)
+
+  def test_batch_warns_once_on_missing_discovery_agent(self):
+    def fake_fetch(topic):
+      return topic, None, True
+
+    with patch.object(runtime, '_fetch_topic_info', side_effect=fake_fetch):
+      with self.assertLogs(runtime.logger, level='WARNING') as cm:
+        result = runtime._fetch_topic_info_batch({'/a', '/b', '/c'})
+
+    self.assertIsNone(result)
+    discovery_warnings = [m for m in cm.output if '/_agnocast_discovery' in m]
+    self.assertEqual(len(discovery_warnings), 1)
+    self.assertIn('3 of 3', discovery_warnings[0])
+
+  def test_batch_suppresses_warning_when_known_missing(self):
+    """No aggregated batch warning when the caller already warned early."""
+    def fake_fetch(topic):
+      return topic, None, True
+
+    with patch.object(runtime, '_fetch_topic_info', side_effect=fake_fetch):
+      with patch.object(runtime.logger, 'warning') as mock_warning:
+        result = runtime._fetch_topic_info_batch(
+          {'/a', '/b'}, discovery_agent_known_missing=True)
+
+    self.assertIsNone(result)
+    mock_warning.assert_not_called()
+
+  def test_fetch_agnocast_topics_detects_missing_discovery_agent(self):
+    with patch.object(
+        runtime, '_run_agnocast_command',
+        return_value=('/topic_x (Agnocast enabled)\n',
+                      'no /_agnocast_discovery agent visible')):
+      topics, missing = runtime._fetch_agnocast_topics()
+    self.assertEqual(topics, {'/topic_x'})
+    self.assertTrue(missing)
+
+
 if __name__ == '__main__':
   unittest.main()

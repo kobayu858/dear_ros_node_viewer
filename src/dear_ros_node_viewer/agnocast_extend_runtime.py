@@ -61,21 +61,70 @@ class TopicEndpoints:
   agnocast_subs: list[EndpointInfo] = field(default_factory=list)
 
 
-def _run_agnocast_command(cmd: list[str], timeout: int = 15) -> str | None:
-  """Run an Agnocast CLI command and return stdout, or None on failure."""
+# stderr substrings that indicate the Agnocast discovery agent
+# (/_agnocast_discovery) is not providing data, so info_agnocast can only
+# see the local namespace via ioctl and reports topics as unknown.
+_DISCOVERY_AGENT_ERROR_MARKERS = (
+  'no /_agnocast_discovery agent visible',
+  'no snapshot received',
+  'falling back to ioctl',
+)
+
+
+def _is_missing_discovery_agent_error(stderr: str | None) -> bool:
+  """Return True if stderr indicates the Agnocast discovery agent is missing."""
+  if not stderr:
+    return False
+  return any(marker in stderr for marker in _DISCOVERY_AGENT_ERROR_MARKERS)
+
+
+def _log_missing_discovery_agent_warning(unresolved: int | None = None,
+                                         total: int | None = None) -> None:
+  """Emit the standard actionable warning about a missing discovery agent."""
+  detail = ''
+  if unresolved is not None and total is not None:
+    detail = (f' {unresolved} of {total} topic(s) could not be resolved and '
+              'were seen as local namespace only (ioctl).')
+  logger.warning(
+    'Agnocast discovery agent (/_agnocast_discovery) unavailable.%s '
+    'Agnocast graph will be incomplete. Start the discovery agent with '
+    '`ros2 run ros2agnocast_discovery_agent discovery_agent`, and if it is '
+    'already running try `ros2 daemon stop && ros2 daemon start`.', detail)
+
+
+def _run_agnocast_command(
+    cmd: list[str],
+    timeout: int = 15,
+    suppress_discovery_warning: bool = False,
+) -> tuple[str | None, str]:
+  """Run an Agnocast CLI command.
+
+  Returns
+  -------
+  (stdout, stderr) : tuple[str | None, str]
+      ``stdout`` is the command output, or ``None`` on failure.
+      ``stderr`` is the captured stderr (empty string when unavailable).
+
+  When ``suppress_discovery_warning`` is True, the per-command warning is
+  skipped for failures caused by a missing discovery agent, so a caller
+  running many commands can emit a single aggregated warning instead.
+  """
   try:
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if result.returncode != 0:
-      logger.warning('Agnocast command failed (rc=%d): %s\nstderr: %s',
-               result.returncode, ' '.join(cmd), result.stderr.strip())
-      return None
-    return result.stdout
+      stderr = result.stderr.strip()
+      is_discovery_error = _is_missing_discovery_agent_error(stderr)
+      if not (suppress_discovery_warning and is_discovery_error):
+        logger.warning('Agnocast command failed (rc=%d): %s\nstderr: %s',
+                 result.returncode, ' '.join(cmd), stderr)
+      return None, stderr
+    return result.stdout, result.stderr.strip()
   except FileNotFoundError:
     logger.warning('ros2 command not found. Agnocast features disabled.')
-    return None
+    return None, ''
   except subprocess.TimeoutExpired:
     logger.warning('Agnocast command timed out (%ds): %s', timeout, ' '.join(cmd))
-    return None
+    return None, ''
 
 
 def _parse_node_list_agnocast(output: str) -> set[str]:
@@ -150,33 +199,51 @@ def _parse_single_topic_info(block: str) -> TopicEndpoints:
 
 def _fetch_node_list() -> set[str] | None:
   """Execute ``ros2 node list_agnocast`` and return parsed result."""
-  output = _run_agnocast_command(['ros2', 'node', 'list_agnocast'])
+  output, _ = _run_agnocast_command(['ros2', 'node', 'list_agnocast'])
   if output is None:
     return None
   return _parse_node_list_agnocast(output)
 
 
-def _fetch_topic_info(topic: str) -> tuple[str, TopicEndpoints] | None:
-  """Query and parse Agnocast endpoint info for a single topic."""
-  output = _run_agnocast_command(
-    ['ros2', 'topic', 'info_agnocast', '-v', '-d', topic]
+def _fetch_topic_info(topic: str) -> tuple[str, TopicEndpoints | None, bool]:
+  """Query and parse Agnocast endpoint info for a single topic.
+
+  Returns
+  -------
+  (topic, endpoints, missing_discovery_agent) : tuple
+      ``endpoints`` is ``None`` on failure. ``missing_discovery_agent`` is
+      True when the failure was caused by a missing discovery agent.
+  """
+  output, stderr = _run_agnocast_command(
+    ['ros2', 'topic', 'info_agnocast', '-v', '-d', topic],
+    suppress_discovery_warning=True,
   )
   if output is None:
-    return None
-  return topic, _parse_single_topic_info(output)
+    return topic, None, _is_missing_discovery_agent_error(stderr)
+  return topic, _parse_single_topic_info(output), False
 
 
-def _fetch_agnocast_topics() -> set[str] | None:
-  """Execute ``ros2 topic list_agnocast`` and return parsed topic names."""
-  output = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
+def _fetch_agnocast_topics() -> tuple[set[str] | None, bool]:
+  """Execute ``ros2 topic list_agnocast`` and return parsed topic names.
+
+  Returns
+  -------
+  (topics, missing_discovery_agent) : tuple
+      ``topics`` is ``None`` on failure. ``missing_discovery_agent`` is True
+      when the command's stderr shows the discovery agent is unavailable;
+      this lets the caller warn once early, before the per-topic batch.
+  """
+  output, stderr = _run_agnocast_command(['ros2', 'topic', 'list_agnocast'])
+  missing_discovery_agent = _is_missing_discovery_agent_error(stderr)
   if output is None:
-    return None
-  return _parse_topic_list_agnocast(output)
+    return None, missing_discovery_agent
+  return _parse_topic_list_agnocast(output), missing_discovery_agent
 
 
 def _fetch_topic_info_batch(
     agnocast_topics: set[str] | None,
-    max_workers: int = AGNOCAST_INFO_MAX_WORKERS
+    max_workers: int = AGNOCAST_INFO_MAX_WORKERS,
+    discovery_agent_known_missing: bool = False,
 ) -> dict[str, TopicEndpoints] | None:
   """Execute ``ros2 topic info_agnocast -v`` per topic and return parsed result.
 
@@ -189,12 +256,23 @@ def _fetch_topic_info_batch(
     return None
 
   all_info: dict[str, TopicEndpoints] = {}
+  discovery_agent_failures = 0
   worker_count = min(max_workers, len(agnocast_topics))
   with ThreadPoolExecutor(max_workers=worker_count) as executor:
-    for result in executor.map(_fetch_topic_info, agnocast_topics):
-      if result is not None:
-        topic, endpoints = result
+    for topic, endpoints, missing_discovery_agent in executor.map(
+        _fetch_topic_info, agnocast_topics):
+      if endpoints is not None:
         all_info[topic] = endpoints
+      elif missing_discovery_agent:
+        discovery_agent_failures += 1
+
+  # When the caller already warned early (discovery agent detected missing
+  # before the batch), skip the aggregated warning to avoid duplication.
+  # Otherwise this serves as the fallback that reports the affected count.
+  if discovery_agent_failures and not discovery_agent_known_missing:
+    _log_missing_discovery_agent_warning(
+      discovery_agent_failures, len(agnocast_topics))
+
   return all_info if all_info else None
 
 
@@ -474,7 +552,7 @@ def extend_agnocast_runtime(
     node_list_future = executor.submit(_fetch_node_list)
     agnocast_topics_future = executor.submit(_fetch_agnocast_topics)
     node_list_result = node_list_future.result()
-    agnocast_topics = agnocast_topics_future.result()
+    agnocast_topics, discovery_agent_missing = agnocast_topics_future.result()
 
   if node_list_result is None:
     logger.info('Agnocast node list unavailable. Agnocast features disabled.')
@@ -484,9 +562,18 @@ def extend_agnocast_runtime(
 
   graph.graph['is_agnocast_environment'] = True
 
+  # Detected early (before the expensive per-topic batch) that the discovery
+  # agent is unavailable: warn once now so the user sees the cause and fix up
+  # front. The batch still runs to collect whatever local-namespace endpoints
+  # remain resolvable via ioctl.
+  if discovery_agent_missing:
+    _log_missing_discovery_agent_warning()
+
   agnocast_only_nodes = node_list_result
 
-  topic_endpoints = _fetch_topic_info_batch(agnocast_topics, max_workers=max_workers)
+  topic_endpoints = _fetch_topic_info_batch(
+    agnocast_topics, max_workers=max_workers,
+    discovery_agent_known_missing=discovery_agent_missing)
   if topic_endpoints is not None:
     logger.info('Topic endpoint info retrieved for %d topics',
           len(topic_endpoints))
