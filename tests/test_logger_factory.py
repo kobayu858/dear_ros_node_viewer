@@ -125,6 +125,53 @@ class TestLoggerFactoryConfig:
             if os.path.exists(temp_log_path):
                 os.unlink(temp_log_path)
 
+    def test_config_attaches_file_handler_to_existing_loggers(self):
+        """config() must retroactively attach a file handler to loggers created
+        before it is called (modules create their logger at import time)."""
+        original_level = LoggerFactory.level
+        original_filename = LoggerFactory.log_filename
+
+        # Logger created BEFORE config() (as module-level loggers are).
+        logger = LoggerFactory.create('test_pre_config_logger')
+        assert not any(
+            isinstance(h, logging.FileHandler) for h in logger.handlers
+        )
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            temp_log_path = f.name
+
+        try:
+            LoggerFactory.config(logging.DEBUG, temp_log_path)
+
+            # The pre-existing logger should now have a file handler.
+            file_handlers = [
+                h for h in logger.handlers if isinstance(h, logging.FileHandler)
+            ]
+            assert len(file_handlers) == 1
+
+            # A second config() call with the same path must not duplicate it.
+            LoggerFactory.config(logging.DEBUG, temp_log_path)
+            file_handlers = [
+                h for h in logger.handlers if isinstance(h, logging.FileHandler)
+            ]
+            assert len(file_handlers) == 1
+
+            logger.info('written to file')
+            for h in file_handlers:
+                h.flush()
+            with open(temp_log_path, encoding='utf-8') as fp:
+                assert 'written to file' in fp.read()
+
+        finally:
+            for h in list(logger.handlers):
+                if isinstance(h, logging.FileHandler):
+                    h.close()
+                    logger.removeHandler(h)
+            LoggerFactory.level = original_level
+            LoggerFactory.log_filename = original_filename
+            if os.path.exists(temp_log_path):
+                os.unlink(temp_log_path)
+
 
 class TestLoggerFactoryLogging:
     """Tests for actual logging functionality"""

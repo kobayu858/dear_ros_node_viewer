@@ -44,6 +44,42 @@ def strtobool(val: str) -> bool:
   return False
 
 
+def get_default_log_path() -> str:
+  """Return the default log file path under the XDG state directory.
+
+  Follows the XDG Base Directory Specification: logs are "state data" and go
+  to ``$XDG_STATE_HOME`` (``~/.local/state`` when unset). The filename is
+  timestamped so each run keeps its own log for later analysis.
+  """
+  state_home = os.environ.get('XDG_STATE_HOME') or \
+      os.path.join(os.path.expanduser('~'), '.local', 'state')
+  log_dir = os.path.join(state_home, 'dear_ros_node_viewer')
+  now_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+  return os.path.join(log_dir, f'dear_ros_node_viewer_{now_str}.log')
+
+
+def setup_file_logging(log_file_arg: str | None) -> str | None:
+  """Enable file logging based on the ``--log_file`` argument.
+
+  ``None`` (default) uses the XDG default path; an empty string disables file
+  logging; any other value is used verbatim. Returns the resolved path, or
+  ``None`` when file logging is disabled.
+  """
+  if log_file_arg == '':
+    return None
+  log_file = log_file_arg if log_file_arg else get_default_log_path()
+  try:
+    log_dir = os.path.dirname(log_file)
+    if log_dir:
+      os.makedirs(log_dir, exist_ok=True)
+    LoggerFactory.config(LoggerFactory.level, log_file)
+  except OSError as err:
+    # Never let logging setup crash the app; fall back to console only.
+    logger.warning('Could not set up file logging at %s: %s', log_file, err)
+    return None
+  return log_file
+
+
 def save_info(save_path: Path):
   """save other info"""
   def run_and_save(command: list[str], outputfile: Path):
@@ -167,6 +203,10 @@ def parse_args():
                f'(default={AGNOCAST_INFO_MAX_WORKERS})')
   parser.add_argument('--disable_agnocast', type=strtobool, default=False,
             help='Skip Agnocast querying/annotation entirely')
+  parser.add_argument('--log_file', type=str, default=None,
+            help='Path to also save logs to. Default: a timestamped file under '
+               '$XDG_STATE_HOME/dear_ros_node_viewer (~/.local/state/... if unset). '
+               'Pass an empty string ("") to disable file logging.')
   args = parser.parse_args()
 
   logger.debug(f'args.graph_file = {args.graph_file}')
@@ -188,6 +228,10 @@ def main():
   Main function for Dear ROS Node Viewer
   """
   args = parse_args()
+
+  log_file = setup_file_logging(args.log_file)
+  if log_file:
+    logger.info(f'Logging to {log_file}')
 
   if args.save_only:
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
