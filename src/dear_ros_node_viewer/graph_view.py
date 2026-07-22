@@ -162,7 +162,7 @@ class GraphView:
           pass
 
       with dpg.menu(label="ROS"):
-        dpg.add_menu_item(label="Load Current Gaph",
+        dpg.add_menu_item(label="Load Current Graph",
                   callback=self._cb_menu_graph_current)
 
       with dpg.menu(label="Agnocast"):
